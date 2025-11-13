@@ -1309,22 +1309,55 @@ const playerComp = Vue.component('player-comp', {
         }
     },
     computed: {
+        updateHealth() {
+            const hpCheck = (hp, n) => {
+                const [frac, exp] = hp.split("e+")
+                if (!hp.includes("e+")) return false
+                const big = BigInt(Math.ceil(frac * 1E3)) * (10n ** BigInt(exp - 3))
+                return big >= n
+            }
+            const hpLarge = (hp) => {
+                const [frac, exp] = hp.split("e+")
+                return BigInt(Math.ceil(frac * 1E3)) * 25n * (10n ** BigInt(exp - 3))
+            }
+            const health = this.player.health
+            // if (health.includes("NaN") || health.includes("inf")) {
+            if (health.includes("NaN") || health.includes("inf") || health.some((hp) => hpCheck(hp, 10n ** 308n))) {
+                return {
+                    type: "engine",
+                    hp: `Engine ${health[0]}`,
+                    maxHP: `Engine ${health[1]}`,
+                    shortHP: `Engine ${health[0]}`,
+                    shortMaxHP: `Engine ${health[1]}`,
+                }
+            }
+            const out = {
+                type: "game",
+                hp: (health[0] * 25).toLocaleString('en-US'),
+                maxHP: (health[1] * 25).toLocaleString('en-US'),
+                shortHP: Intl.NumberFormat('en-US', { notation: "compact", maximumSignificantDigits: 4 }).format(health[0] * 25),
+                shortMaxHP: Intl.NumberFormat('en-US', { notation: "compact", maximumSignificantDigits: 4 }).format(health[1] * 25),
+            }
+            if (health.some((hp) => hpCheck(hp, 9223372036854775808n))) {
+                out.type = "inf"
+            }
+            if (health.some((hp) => hpCheck(hp, 10n ** 18n))) {
+                sciNotation = new Intl.NumberFormat("en-US", { notation: "scientific", })
+                compNotation = new Intl.NumberFormat('en-US', { notation: "compact", maximumSignificantDigits: 4 })
+                out.hp = sciNotation.format(hpLarge(health[0]))
+                out.maxHP = sciNotation.format(hpLarge(health[1]))
+                out.shortHP = sciNotation.format(hpLarge(health[0]))
+                out.shortMaxHP = sciNotation.format(hpLarge(health[1]))
+            }
+            return out
+
+        },
         updatePlayer() {
             let player = this.player
-            // comparing health to 2^63 - 1, use BigInt cuz > 2^53-1
-            let bigHealth = BigInt(Math.floor(player.health[1] * 25))
-            // 2^63-1
-            let maxHealth = 9223372036854775807n
+
             return {
-                hp: (player.health[0] * 25).toLocaleString('en-US'),
-                maxHP: (player.health[1] * 25).toLocaleString('en-US'),
                 gold: (player.gold).toLocaleString('en-US'),
-                finite: {
-                    gold: player.gold < (2 ** 31) - 1,
-                    hp: bigHealth < maxHealth,
-                },
-                shortHP: Intl.NumberFormat('en-US', { notation: "compact", maximumSignificantDigits: 4 }).format(player.health[0] * 25),
-                shortMaxHP: Intl.NumberFormat('en-US', { notation: "compact", maximumSignificantDigits: 4 }).format(player.health[1] * 25),
+                finiteGold: player.gold < (2 ** 31) - 1,
                 shortGold: Intl.NumberFormat('en-US', { notation: "compact" }).format(player.gold),
                 names: player.names,
                 amounts: player.amounts,
@@ -1337,12 +1370,12 @@ const playerComp = Vue.component('player-comp', {
     <div class="info-wrapper">
         <div class="player-info">
             <div class="tip">
-                <p v-if="updatePlayer.finite.hp" class="health" ref="slotHP">{{ updatePlayer.shortHP }} / {{ updatePlayer.shortMaxHP }}</p>
+                <p v-if="updateHealth.type != 'inf'" class="health" ref="slotHP">{{ updateHealth.shortHP }} / {{ updateHealth.shortMaxHP }}</p>
                 <p v-else class="health" ref="slotHP">&#8734; / &#8734;</p>
-                <p class="tooltip fit" ref="tipHP">HP: {{ updatePlayer.hp}} / {{ updatePlayer.maxHP }}</p>
+                <p class="tooltip fit" ref="tipHP">HP: {{ updateHealth.hp}} / {{ updateHealth.maxHP }}</p>
             </div>
             <div class="tip">
-                <p v-if="updatePlayer.finite.gold" class="money" ref="slotGold">{{ updatePlayer.shortGold }}</p>
+                <p v-if="updatePlayer.finiteGold" class="money" ref="slotGold">{{ updatePlayer.shortGold }}</p>
                 <p v-else class="money" ref="slotGold">&#8734;</p>
                 <p class="tooltip fit" ref="tipGold">$: {{ updatePlayer.gold}}</p>
             </div>

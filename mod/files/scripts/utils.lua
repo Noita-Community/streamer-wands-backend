@@ -101,8 +101,8 @@ function get_player_info()
     local money_comp = EntityGetFirstComponentIncludingDisabled(player, "WalletComponent")
     local money = ComponentGetValue2(money_comp, "money")
     local orbs = GameGetOrbCountThisRun()
-    local max_hp = ComponentGetValue2(hp_comp, "max_hp")
-    local hp = ComponentGetValue2(hp_comp, "hp")
+    local max_hp = tostring(ComponentGetValue2(hp_comp, "max_hp"))
+    local hp = tostring(ComponentGetValue2(hp_comp, "hp"))
     return { hp, max_hp, money, orbs }
 end
 

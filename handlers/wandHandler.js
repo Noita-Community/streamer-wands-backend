@@ -145,7 +145,7 @@ exports.validate = (data) => {
     validatedPlayerInfo.shiftsTotal = numberValidation(playerInfo.shiftsTotal)
     validatedPlayerInfo.shiftsTimer = numberValidation(playerInfo.shiftsTimer)
     const pos = playerInfo.pos ?? null
-    validatedPlayerInfo.health = numbersValidation(playerInfo.health)
+    validatedPlayerInfo.health = playerInfo.health.filter(strFilter)
     validatedPlayerInfo.gold = numberValidation(playerInfo.gold)
     validatedPlayerInfo.orbs = numberValidation(playerInfo.orbs)
     validatedPlayerInfo.x = pos ? numberValidation(pos[0]) : null
