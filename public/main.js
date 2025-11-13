@@ -1311,12 +1311,13 @@ const playerComp = Vue.component('player-comp', {
     computed: {
         updateHealth() {
             const hpCheck = (hp, n) => {
-                const [frac, exp] = hp.split("e+")
                 if (!hp.includes("e+")) return false
+                const [frac, exp] = hp.split("e+")
                 const big = BigInt(Math.ceil(frac * 1E3)) * (10n ** BigInt(exp - 3))
                 return big >= n
             }
             const hpLarge = (hp) => {
+                if (!hp.includes("e+")) return hp
                 const [frac, exp] = hp.split("e+")
                 return BigInt(Math.ceil(frac * 1E3)) * 25n * (10n ** BigInt(exp - 3))
             }
