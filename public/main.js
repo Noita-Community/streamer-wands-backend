@@ -1321,6 +1321,9 @@ const playerComp = Vue.component('player-comp', {
                 const [frac, exp] = hp.split("e+")
                 return BigInt(Math.ceil(frac * 1E3)) * 25n * (10n ** BigInt(exp - 3))
             }
+            sciNotation = new Intl.NumberFormat({ notation: "scientific", })
+            compNotation = new Intl.NumberFormat({ notation: "compact", maximumSignificantDigits: 4 })
+
             const health = this.player.health
             // if (health.includes("NaN") || health.includes("inf")) {
             if (health.includes("NaN") || health.includes("inf") || health.some((hp) => hpCheck(hp, 10n ** 308n))) {
@@ -1334,21 +1337,19 @@ const playerComp = Vue.component('player-comp', {
             }
             const out = {
                 type: "game",
-                hp: (health[0] * 25).toLocaleString('en-US'),
-                maxHP: (health[1] * 25).toLocaleString('en-US'),
-                shortHP: Intl.NumberFormat('en-US', { notation: "compact", maximumSignificantDigits: 4 }).format(health[0] * 25),
-                shortMaxHP: Intl.NumberFormat('en-US', { notation: "compact", maximumSignificantDigits: 4 }).format(health[1] * 25),
+                hp: (health[0] * 25).toLocaleString(),
+                maxHP: (health[1] * 25).toLocaleString(),
+                shortHP: compNotation.format(health[0] * 25),
+                shortMaxHP: compNotation.format(health[1] * 25),
             }
             if (health.some((hp) => hpCheck(hp, 9223372036854775808n))) {
                 out.type = "inf"
             }
             if (health.some((hp) => hpCheck(hp, 10n ** 18n))) {
-                sciNotation = new Intl.NumberFormat("en-US", { notation: "scientific", })
-                compNotation = new Intl.NumberFormat('en-US', { notation: "compact", maximumSignificantDigits: 4 })
                 out.hp = sciNotation.format(hpLarge(health[0]))
                 out.maxHP = sciNotation.format(hpLarge(health[1]))
-                out.shortHP = sciNotation.format(hpLarge(health[0]))
-                out.shortMaxHP = sciNotation.format(hpLarge(health[1]))
+                out.shortHP = compNotation.format(hpLarge(health[0]))
+                out.shortMaxHP = compNotation.format(hpLarge(health[1]))
             }
             return out
 
