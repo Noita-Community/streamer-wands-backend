@@ -1321,12 +1321,15 @@ const playerComp = Vue.component('player-comp', {
                 const [frac, exp] = hp.split("e+")
                 return BigInt(Math.ceil(frac * 1E3)) * 25n * (10n ** BigInt(exp - 3))
             }
+            const hpSpecial = (hp) => {
+                return [/nan/i, /inf/i].some((x) => x.test(hp))
+            }
             sciNotation = new Intl.NumberFormat({ notation: "scientific", })
             compNotation = new Intl.NumberFormat({ notation: "compact", maximumSignificantDigits: 4 })
 
             const health = this.player.health
             // if (health.includes("NaN") || health.includes("inf")) {
-            if (health.includes("NaN") || health.includes("inf") || health.some((hp) => hpCheck(hp, 10n ** 308n))) {
+            if (health.some((hp) => hpSpecial(hp)) || health.some((hp) => hpCheck(hp, 10n ** 308n))) {
                 return {
                     type: "engine",
                     hp: `Engine ${health[0]}`,
