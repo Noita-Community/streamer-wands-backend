@@ -1324,8 +1324,8 @@ const playerComp = Vue.component('player-comp', {
             const hpSpecial = (hp) => {
                 return [/nan/i, /inf/i].some((x) => x.test(hp))
             }
-            sciNotation = new Intl.NumberFormat({ notation: "scientific", })
-            compNotation = new Intl.NumberFormat({ notation: "compact", maximumSignificantDigits: 4 })
+            sciNotation = new Intl.NumberFormat(undefined, { notation: "scientific", })
+            compNotation = new Intl.NumberFormat(undefined, { notation: "compact", maximumSignificantDigits: 4 })
 
             const health = this.player.health
             // if (health.includes("NaN") || health.includes("inf")) {
