@@ -1,5 +1,4 @@
 {
-    "schema_version": 1,
     "mod": {
         "version": null,
         "features": {
@@ -31,7 +30,12 @@
     ],
     "inventory": [null, null, null, null],
     "items": [],
-    "progress": { "perks": ["CRITICAL_HIT"], "spells": ["BOMB"], "enemies": ["player"], "pillars": [] },
+    "progress": {
+        "perks": ["CRITICAL_HIT"],
+        "spells": ["BOMB"],
+        "enemies": ["player"],
+        "pillars": []
+    },
     "run": {
         "mods": ["streamer_wands"],
         "beta": false,

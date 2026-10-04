@@ -16,8 +16,8 @@ import { MongoClient } from 'mongodb';
 
 const uri = process.env.DATABASE;
 if (!uri) {
-  console.error('DATABASE is not set; expected it in .env in the project root');
-  process.exit(1);
+    console.error('DATABASE is not set; expected it in .env in the project root');
+    process.exit(1);
 }
 
 const out = resolve(process.argv[2] ?? 'test/fixtures/mongo-streamers.json');
@@ -30,14 +30,14 @@ const streamers = await db.collection('streamers').find({}).toArray();
 
 // Normalise for the migration: id as string, drop Mongo bookkeeping.
 const rows = streamers.map(({ _id, __v, ...doc }) => ({
-  ...doc,
-  id: String(doc.id),
+    ...doc,
+    id: String(doc.id),
 }));
 
 await mkdir(dirname(out), { recursive: true });
 await writeFile(out, JSON.stringify(rows, null, 2) + '\n');
 
-const withSnapshot = rows.filter(r => Array.isArray(r.wands) && r.wands.length > 0).length;
+const withSnapshot = rows.filter((r) => Array.isArray(r.wands) && r.wands.length > 0).length;
 console.log(`db=${db.databaseName} streamers=${rows.length} with_wands=${withSnapshot} -> ${out}`);
 
 await client.close();

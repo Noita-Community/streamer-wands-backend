@@ -2,7 +2,12 @@
     "wands": [],
     "inventory": ["0", "0"],
     "items": ["0", "0"],
-    "progress": [["CRITICAL_HIT"], ["APOTHEOSIS_CRYSTAL_SHOT"], ["apotheosis_fire_lukki"], ["p_boss_fire_lukki"]],
+    "progress": [
+        ["CRITICAL_HIT"],
+        ["APOTHEOSIS_CRYSTAL_SHOT"],
+        ["apotheosis_fire_lukki"],
+        ["p_boss_fire_lukki"]
+    ],
     "runInfo": {
         "mods": ["streamer_wands", "Apotheosis"],
         "beta": false,

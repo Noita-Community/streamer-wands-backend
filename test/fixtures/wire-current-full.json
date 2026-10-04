@@ -44,7 +44,10 @@
         "gold": 2231,
         "orbs": 3,
         "pos": [2400.994140625, 843.9972534179688],
-        "perks": [["$perk_edit_wands_everywhere", "$perk_extra_hp"], [1, 2]],
+        "perks": [
+            ["$perk_edit_wands_everywhere", "$perk_extra_hp"],
+            [1, 2]
+        ],
         "shiftsTotal": 3,
         "shiftsList": [
             "water%@%Water<,>oil%@%Oil",

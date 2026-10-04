@@ -112,12 +112,11 @@ Defined by meaning. Named fields, no positional arrays, no delimited strings. Ru
 - **Engine names, not presentation names.** Fields keep the identifiers the game uses (`fire_rate_wait`, `reload_time`, `deck_capacity`, `uses_remaining`) so that reasoning about the code never involves a mental remapping. Human labels are a presentation concern: one constant on the page maps field to label.
 - **Sentinels from the engine stay; sentinels from the mod become `null`.** `uses_remaining: -1` is the game's own value for unlimited and is kept. The shift timer's `-1` is assigned by the mod's Lua and becomes `null`.
 - **Slot arrays are fixed-length with `null` for empty, but no code or type assumes a particular length.** Sixteen spells and four items are what the vanilla game has today; a mod can change either. The wire gives us the gaps, so lengths come from the data.
-- **No duplicated timestamp.** The row's `updated_at` is the single source. It is copied onto the served object at serve time under `receivedAt`, never stored in the JSON.
+- **No duplicated timestamp.** The row's `updated_at` is the single source and is never stored in the JSON. Three types express this: `InsertableSnapshot` is the write surface of the snapshot column, what `fromWire` produces and `writeSnapshot` accepts. `SelectableSnapshot` is the read surface, what a query yields once parsed. `Snapshot` is `SelectableSnapshot & { received_at }`, which `readSnapshot` returns after assigning the row's `updated_at` onto the object it just parsed. Everything outside the database layer works with `Snapshot`.
 - **Items are parsed into structure on write, exactly the way the current page parses them, no more and no less.** The mod writes `sprite .. item_name .. ui_description .. "$" .. colour .. contents` with no delimiters between the first three (unchanged since items were added in PR #13). The page relies on name and description being translation keys that start with `$` and splits on that. The parser does the same. When the game supplies literal text instead (modded items, some descriptions), the descriptor does not split; the page shows nothing today, and the parser stores `unparsed` with the raw string, which displays the same way. No heuristic recovery. 7 of 669 distinct descriptors in the dump are in this state. **Future mod work:** give the item descriptor a real delimiter-based or JSON serialization and have `fromWire` prefer it; see Phase 6.
 
 ```ts
-type Snapshot = {
-    schema_version: 1
+type InsertableSnapshot = {              // the version lives in the row's schema_version column, not here
     mod: {
         version: string | null            // null for mods that predate version.lua
         features: {                        // missing on the wire means false
@@ -211,9 +210,9 @@ Field names in `Wand` and `Spell` are the engine's component fields. `player.hp`
 One function per concern in `schema.ts`:
 
 - `fromWire(payload: unknown, now: number): Snapshot | null`. Recognises every wire generation **by shape**, never by a version field, because `modVersion` only exists in current-generation mods and older ones sent nothing that identifies them. Known older shapes, from the server history and the dump: a bare array of wands as the whole payload; no `items`; `progress` with three arrays instead of four; `health` as numbers rather than strings; no `orbs`, `start` or `playtime`; no `modFeatures`. Each rule in the function names the shape it recognises. Returns null only when the input is not recognisable as a snapshot at all.
-- `migrate(stored: unknown): Snapshot`. Takes a stored row at any canonical version and applies the numbered migrations up to the current one. Version 1 has no migrations yet; this exists so the first schema change has somewhere to go.
+- `migrate(stored: unknown, version: number): SelectableSnapshot`. Takes the parsed JSON from a row and that row's `schema_version`, checks the version, and applies the numbered migrations up to the current one. Version 1 has no migrations yet; this exists so the first schema change has somewhere to go.
 
-Rows carry `schema_version`. On read, a row below the current version is migrated and written back. On write, the incoming payload always lands at the current version. The page therefore only ever sees the current canonical shape.
+The row's `schema_version` column is the only record of which canonical version its JSON is in; the JSON does not repeat it. Stored data is `unknown` until it has been through `migrate`: the database layer never casts a query result straight to a snapshot type. On read, a row below the current version is migrated and written back. On write, the incoming payload always lands at the current version. The page therefore only ever sees the current canonical shape.
 
 The defaults and type coercions in the current validator exist to **migrate older mod payloads forward**, not to express intended values; `fromWire` carries that intent. Where the wire genuinely has no information, the canonical shape says so with `null` rather than inventing a value.
 
@@ -382,8 +381,12 @@ web/
 test/
   fixtures/               generated payloads, salakieli samples (move from mod_testing/)
   *.test.ts               node:test
+ops/
+  config.sh               operational names shared by the scripts below
+  setup.sh                create the volume, check or generate secrets
+  rebuild.sh              build the image
+  reload.sh               replace the running container; defines the environment
 Dockerfile
-compose.yaml
 PLAN.md
 README.md
 ```
@@ -396,19 +399,41 @@ Key decisions:
 - Twitch user ids are strings end to end. Twitch supplies them as strings, the JWT carries a string, and the current Mongo `Number` type is an unnecessary narrowing. Never convert to `Number`. The migration script coerces existing numeric ids back to strings. Compare ids as strings everywhere (socket routing, session, lookups).
 - The viewer page is static HTML. It fetches `/api/streamer/:name` for the initial state, then opens the websocket. The server never renders templates with data in them.
 - The index page needs login state and the release list. Template literal plus an HTML escape helper. No template engine.
-- Node 24 runs `.ts` directly. Avoid enums, namespaces, and parameter properties so type stripping works. `tsc --noEmit` in CI.
+- Node 26 runs `.ts` directly. Avoid enums, namespaces, and parameter properties so type stripping works. `tsc --noEmit` in CI.
 - Stats decrypt: AES-CTR via `crypto.subtle` as today, then a real XML parser. The three samples in `mod_testing/` with their expected `.lua` output are the test.
 - Bundle: load the mod zip with a library, add the four per-user files, stream the result. No hand-written zip structures.
 - Static files served by Node in all environments. A reverse proxy in front is optional.
+- Code style: Prettier with the repo's existing rules plus semicolons. Applied to the rewrite's own files only; the old app and the mod are left as they are.
+
+## Secrets
+
+A secret is wrapped in a `Secret` as soon as it is read. The value is held in a module-level WeakMap keyed by the wrapper's identity, so the wrapper has no fields: nothing shows when it is logged, serialized, or expanded in a debugger, which matters when developing on stream. Functions take and pass the `Secret` itself. `unwrap()` is called only at the point of use, directly in the argument to the library call that needs the raw value; an unwrapped secret is never held in a variable or passed through a function.
+
+## Logging
+
+Every log entry is an object with a `message` field, written as one line of JSON with `time` and `level` added. There is no string form. Error values in an entry are expanded to name, message, stack, and cause, so a failure records where it happened.
+
+What gets logged is chosen for after-the-fact visibility into operations, not inherited from the old server, whose logging was arbitrary:
+
+| Level | Events |
+|---|---|
+| `info` | Process lifecycle: resolved configuration, database opened and at which DDL version, listening, shutting down. Table changes applied. A stored snapshot migrated to a newer schema version. A mod session: connected, its first snapshot with the mod version it reports, and disconnected with how long it was connected and how many snapshots and unusable payloads it sent. |
+| `warn` | Things that should not happen and that someone may need to act on: a mod refused because its ticket did not verify, the first unusable payload on a connection, a socket that timed out without closing, a socket error (including an oversized frame), a snapshot that could not be stored. |
+| `error` | Unhandled failures in a request or upgrade, with the stack. |
+| `debug` | High-volume events only useful when tracing: each viewer connecting and disconnecting, each snapshot stored, viewers refused for an unknown streamer name. |
+
+A mod session's lifecycle is at `info` because "was the mod connected, on which version, and did it send anything" is the first question when a streamer's page looks stale.
 
 ## Configuration
 
 No dotenv. `config.ts` does exactly this:
 
-1. Reads a fixed list of named environment variables. For each, if `NAME_FILE` is set, reads the value from that path (Docker secrets convention).
-2. Validates presence and type. Missing or malformed required values exit with a message naming every problem, not just the first.
-3. Returns a frozen object. Secrets are wrapped so they do not print.
-4. Logs the resolved non-secret configuration at startup.
+1. Takes the environment object as an argument. It never reads `process.env` itself; the entry point passes `process.env` and tests pass a plain object.
+2. Reads a fixed list of named variables from it. For each, if `NAME_FILE` is set, reads the value from that path (Docker secrets convention).
+3. Validates presence and type. Missing or malformed required values exit with a message naming every problem, not just the first.
+4. Returns a frozen object with secrets wrapped.
+
+The entry point logs the resolved configuration at startup; secrets serialize as `[secret]`.
 
 | Variable | Required | Purpose |
 |---|---|---|
@@ -423,12 +448,15 @@ No dotenv. `config.ts` does exactly this:
 | `TRUST_PROXY` | no, default false | honour `X-Forwarded-*`, set secure cookies |
 | `LOG_LEVEL` | no, default `info` | |
 
-Local development sets these from `compose.yaml` or a checked-in `dev.env.example` that is sourced explicitly. Nothing reads a file implicitly.
+In deployment the environment is defined in exactly one place, `ops/reload.sh`, with secrets supplied as `*_FILE` paths into a mounted directory. Nothing reads a file implicitly.
 
 ## Deployment
 
-- Multi-stage `Dockerfile`: `node:24-slim`, copy `server/`, `web/`, `mod/`, `package.json`, `npm ci --omit=dev`, run as non-root, `node server/main.ts`.
-- `compose.yaml` with the service, a named volume for `/data`, env or secrets.
+- `Dockerfile`: `node:26-slim`, copy `package.json` and the pnpm lockfile, `pnpm install --frozen-lockfile --prod`, copy `server/` and `mod/` (and `web/` from Phase 2), run as non-root, `node server/main.ts`. No build stage: Node runs the TypeScript directly.
+- No docker compose. Shell scripts in `ops/` cover the basic tasks and share `ops/config.sh`, which holds the operational names: image, container, volume, host port, secrets directory. Each name can be overridden from the caller's environment for one invocation.
+  - `ops/setup.sh` creates the volume and checks that the secret files exist. With `--generate-secrets` it also creates the secrets directory and generates `session_secret` and `jwt_secret` if they are absent. It never overwrites a file and never generates the Twitch client secret, which comes from Twitch. A generated `jwt_secret` is only right for a new deployment: at cutover that file must hold the old server's `JWT_SECRET`.
+  - `ops/rebuild.sh` builds the image from the checkout, tagged `latest` and with the git revision.
+  - `ops/reload.sh` replaces the running container. It is where every environment variable is defined and passed.
 - `GET /healthz` returns 200 once sqlite is open.
 - sqlite backup is a file copy of the volume. Document it, including that the file contains OAuth tokens and must be stored accordingly.
 - Remove `ecosystem*.config.js` and the `bundle` script once Phase 3 settles release handling.
@@ -440,20 +468,21 @@ Each phase ends in something runnable. Phase 0 and Phase 1 are ordered; later ph
 ### Phase 0: schema and fixtures
 
 - [x] Dump the Mongo `streamers` collection to JSON (`scripts/dump-mongo.mjs`, run on an allowlisted host; output is gitignored because it is user data). See "What the dump showed".
-- [ ] Settle the canonical shape (the open points under "Canonical shape").
-- [ ] Write `schema.ts`: canonical types, `fromWire` recognising every wire generation, `migrate` with an empty migration list.
-- [ ] Fixtures: wire input and expected canonical output per generation, plus edge cases.
-- [ ] Move `mod_testing/` samples to `test/fixtures/` and write the stats decrypt test.
+- [x] Settle the canonical shape.
+- [x] Write `schema.ts`: canonical types, `fromWire` recognising every wire generation, `migrate` with an empty migration list.
+- [x] Fixtures: wire input and expected canonical output per generation, plus edge cases.
+- [x] Move `mod_testing/` samples to `test/fixtures/` and write the stats decrypt test.
 - [x] Rendered DOM dumps of the production pages (`scripts/dump-reference.mjs`, output in `reference/`, gitignored and regenerable until cutover). Covers the streamer page with default toggles and with every toggle on, the no-such-streamer page, and the logged-out index. No screenshots; the DOM is the reference.
 - [x] Logged-in index page dump, in `reference/index-logged-in.html`. The picker offers one version only (1.2.10), which supports release option (b) in Phase 3.
 - [ ] Opportunistically capture a few real websocket payloads and compare to fixtures. Not blocking.
 
 ### Phase 1: core server (critical path)
 
-- [ ] `config.ts`, `db.ts` with schema and migrations, `jwt.ts`, `schema.ts`.
-- [ ] `ws.ts`: upgrade routing (`/<jwt>` and `/client=<name>`), ticket verification, viewer name resolution to id, persistence, fan-out by id, ping/pong reaping every 30s.
-- [ ] Tests: fake mod sends each wire fixture, fake viewer receives the expected canonical snapshot, row is updated at the current schema version.
-- [ ] Dockerfile and compose, so Phase 1 runs the same way production will.
+- [x] `config.ts`, `log.ts`, `db.ts` with the strict tables and DDL versioning, `ticket.ts`, `schema.ts`.
+- [x] `ws.ts`: upgrade routing (`/<jwt>` and `/client=<name>`), ticket verification, viewer name resolution to id, persistence, fan-out by id, ping/pong reaping every 30s. A viewer is sent the current snapshot as soon as it connects.
+- [x] `app.ts` and `main.ts`: HTTP server with `/healthz` and `/api/streamer/:name`, websocket upgrade attached, clean shutdown on SIGTERM.
+- [x] Tests: fake mod sends each wire fixture, fake viewer receives the expected canonical snapshot, row is updated at the current schema version.
+- [ ] Dockerfile and `ops/` scripts, so Phase 1 runs the same way production will. Written, and the setup script's logic exercised against a stub; not yet built or run for real, since the development container has no Docker.
 - [ ] Point a dev `host.lua` at the new server and confirm the unchanged mod connects and updates.
 
 Done when: a real mod instance talks to the new server with no Lua changes.
@@ -511,4 +540,4 @@ Done when: a fresh login produces a zip that installs and connects.
 - A wrong JWT implementation breaks every installed mod at once. Mitigate with a real production ticket as a test fixture.
 - A wrong `fromWire` rule stores wrong data for everyone on that mod generation. Mitigate with the per-generation fixture pairs and by rendering each expected canonical fixture during Phase 2.
 - Twitch OAuth scope `user_read` is legacy. Request no scopes.
-- `node:sqlite` is marked experimental in the Node 24 docs although it needs no flag. Pin Node in the Dockerfile and `engines`.
+- `node:sqlite` is a release candidate, not yet stable (it left "experimental" in Node 25.7 and no longer prints a warning on load). Node 26 is pinned in the Dockerfile and in `engines`; revisit the pin when the module is declared stable.

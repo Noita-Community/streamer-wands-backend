@@ -1,5 +1,4 @@
 {
-    "schema_version": 1,
     "mod": {
         "version": "1.2.10",
         "features": {
@@ -94,11 +93,22 @@
             "iteration": 3,
             "seconds_since_last": 127.5,
             "shifts": [
-                [{ "from": { "id": "water", "ui_name": "Water" }, "to": { "id": "oil", "ui_name": "Oil" } }],
+                [
+                    {
+                        "from": { "id": "water", "ui_name": "Water" },
+                        "to": { "id": "oil", "ui_name": "Oil" }
+                    }
+                ],
                 null,
                 [
-                    { "from": { "id": "lava", "ui_name": "Lava" }, "to": { "id": "blood", "ui_name": "Blood" } },
-                    { "from": { "id": "sand", "ui_name": "Sand" }, "to": { "id": "blood", "ui_name": "Blood" } }
+                    {
+                        "from": { "id": "lava", "ui_name": "Lava" },
+                        "to": { "id": "blood", "ui_name": "Blood" }
+                    },
+                    {
+                        "from": { "id": "sand", "ui_name": "Sand" },
+                        "to": { "id": "blood", "ui_name": "Blood" }
+                    }
                 ]
             ]
         }

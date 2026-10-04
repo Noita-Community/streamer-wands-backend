@@ -1,5 +1,4 @@
 {
-    "schema_version": 1,
     "mod": {
         "version": "1.2.10",
         "features": {
@@ -43,7 +42,12 @@
             "iteration": 2,
             "seconds_since_last": null,
             "shifts": [
-                [{ "from": { "id": "sheep", "ui_name": "Sheep" }, "to": { "id": "wolf", "ui_name": "Wolf" } }],
+                [
+                    {
+                        "from": { "id": "sheep", "ui_name": "Sheep" },
+                        "to": { "id": "wolf", "ui_name": "Wolf" }
+                    }
+                ],
                 null
             ]
         }
