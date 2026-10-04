@@ -2,3 +2,5 @@
 /.env
 /mod.zip
 .DS_Store
+/.claude
+/config.json
