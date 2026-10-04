@@ -1,5 +1,7 @@
 // Entry point: read configuration, open the database, listen.
 
+import { readFileSync } from 'node:fs';
+
 import { createApp } from './app.ts';
 import { ConfigError, loadConfig, type Config } from './config.ts';
 import { openDb } from './db.ts';
@@ -21,11 +23,32 @@ const log = createLogger(config.logLevel);
 // visible at startup.
 log.info({ message: 'configuration', ...config });
 
+// The mod version this build hands out is recorded next to the app version in package.json.
+const { modVersion } = JSON.parse(
+    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+) as { modVersion?: unknown };
+if (typeof modVersion !== 'string' || modVersion === '') {
+    // Without it every viewer would be told the streamer's mod is out of date.
+    console.error('package.json has no "modVersion"');
+    process.exit(1);
+}
+
 const db = openDb(config.dbPath, log);
-const app = createApp({ db, jwtSecret: config.jwtSecret, log });
+const app = createApp({
+    db,
+    jwtSecret: config.jwtSecret,
+    log,
+    modVersion,
+    webDir: config.webDir,
+});
 
 app.server.listen(config.port, () => {
-    log.info({ message: 'listening', port: config.port, public_url: config.publicUrl });
+    log.info({
+        message: 'listening',
+        port: config.port,
+        public_url: config.publicUrl,
+        mod_version: modVersion,
+    });
 });
 
 let stopping = false;

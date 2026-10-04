@@ -1,5 +1,5 @@
-// Capture the rendered DOM of the current production pages, as a reference for the
-// Phase 2 port of the viewer page. One-off; the output is not maintained after cutover.
+// Capture the rendered DOM of a running site's pages, for comparing against what another
+// version of the site renders for the same streamer.
 //
 // Run from the project root:
 //   node scripts/dump-reference.mjs [base-url] [streamer-name]

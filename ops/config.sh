@@ -20,6 +20,6 @@ HOST_PORT="${HOST_PORT:-3000}"
 
 # Host directory holding one file per secret, mounted read-only at /run/secrets:
 #   twitch_client_secret   from the Twitch developer console
-#   jwt_secret             must equal the previous server's JWT_SECRET so installed mods keep working
+#   jwt_secret             signs the token in every downloaded mod; changing it locks them all out
 #   session_secret
 SECRETS_DIR="${SECRETS_DIR:-/srv/onlywands/secrets}"

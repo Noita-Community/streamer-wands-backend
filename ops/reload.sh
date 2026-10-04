@@ -2,8 +2,8 @@
 # Replace the running container with one started from the current image.
 #
 # This is the one place the server's environment is defined. Every setting it reads is listed
-# here explicitly; see PLAN.md, "Configuration", for what each one means. Secret values are not
-# in this file: the *_FILE variables point at files mounted from SECRETS_DIR.
+# here explicitly; server/config.ts says what each one means. Secret values are not in this
+# file: the *_FILE variables point at files mounted from SECRETS_DIR.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

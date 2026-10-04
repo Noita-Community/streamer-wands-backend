@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <title>Streamer Wands</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="google" content="notranslate" />
+        <meta http-equiv="Content-Language" content="en" />
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="stylesheet" href="/style.css" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap" />
+    </head>
+    <body>
+        <div class="menu">
+            <ul class="links">
+                <li><a href="/">home</a></li>
+                <li><a href="/auth/login/beta">login (beta)</a></li>
+            </ul>
+        </div>
+        <div class="main">
+            <div class="prose">
+                <h1 class="nostreamer">Streamer "<span data-streamer-name></span>" Not Found</h1>
+                <p>The streamer may not have logged in to onlywands.com yet.</p>
+                <h2 class="migration">Streamer Wands has moved to a new host</h2>
+                <p>
+                    TLDR for streamers: You will need to
+                    <a href="/auth/login/beta">log in</a> again, and accept OAuth from a new Twitch
+                    application. You will also need to replace your current version of the mod with
+                    the new one <a href="/">downloaded from this site</a>. The old installation
+                    instructions no longer apply, though: you can download a ready-to-install zip
+                    file from this site directly.
+                </p>
+                <p>
+                    Soler, the original author of Streamer Wands, has archived the
+                    <a href="https://github.com/soler91/streamer-wands-backend">original project</a>
+                    and handed it off to other maintainers. The
+                    <a href="https://github.com/myndzi/streamer-wands-backend">new fork</a> is
+                    maintained by <a href="https://twitch.tv/myndzi">myndzi</a>, with hosting
+                    generously provided by <a href="https://twitch.tv/dunkorslam">DunkOrSlam</a>.
+                </p>
+                <p>
+                    I (myndzi) have no current plans to develop the code further, but will accept
+                    reasonable pull requests if you are interested in contributing.
+                </p>
+                <p>
+                    Big thanks to <a href="https://ko-fi.com/soler91">Soler</a> for all his work on
+                    the project to date!
+                </p>
+            </div>
+        </div>
+        <div class="footer">
+            <h1 class="github">Github</h1>
+            <p>
+                Source code is
+                <a href="https://github.com/myndzi/streamer-wands-backend/">available on Github</a>.
+                In particular, the contents of the mod bundle are in the
+                <a href="https://github.com/myndzi/streamer-wands-backend/tree/master/mod/"
+                    >mod folder</a
+                >.
+            </p>
+        </div>
+        <script type="module" src="/src/nostreamer.ts"></script>
+    </body>
+</html>

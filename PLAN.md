@@ -339,16 +339,18 @@ The goal is to remove dependencies that do trivial work or duplicate Node built-
 | HTTP routing, static files, cookies, sessions | built-ins | the routing table is six routes; `node:http` plus a small matcher is enough |
 | Multipart upload | built-in `Response.formData()` | one small file, one field |
 | JWT HS256 | keep `jsonwebtoken` | a security boundary involving crypto. Pin `algorithms: ['HS256']` on verify and validate the payload contents ourselves. |
-| Package manager | `pnpm` | the person running the project runs `pnpm install` on the host so links and permissions are right; agents and scripts do not run it |
+| Package manager | `pnpm`, default settings | implicit installs before `pnpm exec` and `pnpm run` are accepted. The development container and the host see the project at different paths, which makes pnpm reinstall when switching between them; that is tolerated rather than configured around. |
 | Twitch OAuth and Helix API | built-in `fetch`, thin hand-written client | the surface is four endpoints: authorize redirect, token exchange and refresh, `/oauth2/validate`, `/helix/users`. `twurple` was considered and rejected: our use is too thin to justify it. This is a place where roll-our-own is the simpler option. |
 | Config | built-in | explicit, see Configuration |
 | Database | built-in `node:sqlite` | |
 | Templating | none | one page needs login state and a list; a template literal and an escape helper |
-| Frontend framework | none | small snapshot, full re-render every few seconds is fine |
-| Type checking | dev: `typescript` | `tsc --noEmit` only; Node strips types at runtime |
-| Tests | built-in `node:test` | the tests then run under the same loader as the server. Revisit if the page ever needs DOM tests. |
+| Frontend rendering | dev: `preact`, bundled | escaping, DOM updates, and keeping focus and hover across the snapshots that arrive every few seconds are a rendering library's job, not ours. Preact was chosen over smaller libraries because TSX keeps each view readable and focused on the data it shows, function components are straightforward, and it is very widely used. It is used narrowly: function components and the basic hooks, no state library, no router. The Vite preset is not needed; Vite compiles TSX itself. |
+| Frontend language and build | dev: `vite` | the frontend is TypeScript, which needs a build. Vite bundles it, builds in the JSON game data, and puts content hashes in filenames, which is the cache busting. |
+| Tooltip positioning | dev: `@floating-ui/dom`, bundled | the maintained successor to Popper, which the old page loaded from a CDN. CSS anchor positioning would need no library, but it only reached Firefox and Safari within the last year; revisit when it is older. |
+| Type checking | dev: `typescript` | `tsc --noEmit` only; Node strips types for the server at runtime and Vite does for the frontend |
+| Tests | dev: `vitest` | comes with Vite, handles TypeScript without configuration, and runs both the server tests and the browser-driven page tests |
 
-Expected runtime dependencies: `ws`, `fflate`, `fast-xml-parser`, `jsonwebtoken`. `mongodb` and `dotenv` stay as dev dependencies until Phase 5 so the dump script keeps working. If something else in this list turns out to be non-trivial in practice, add a library rather than fight it; update this table when that happens.
+Expected runtime dependencies: `ws`, `fflate`, `fast-xml-parser`, `jsonwebtoken`. Everything used only to build or test is a dev dependency, including `preact` and `@floating-ui/dom`, which end up inside the built page. `mongodb` and `dotenv` stay as dev dependencies until Phase 5 so the dump script keeps working. If something else in this list turns out to be non-trivial in practice, add a library rather than fight it; update this table when that happens.
 
 ## Target architecture
 
@@ -372,15 +374,16 @@ server/
   bundle.ts               load mod zip, inject per-user files (fflate)
   stats.ts                salakieli decrypt and XML parse to stats.lua (fast-xml-parser)
 web/
-  index.html
-  streamer.html
-  nostreamer.html
-  app.js                  viewer rendering, websocket client
+  streamer.html           viewer page entry point
+  nostreamer.html         404 page entry point
+  src/                    Preact components (TSX) for the pages; imports canonical types from server/schema.ts
+  data/*.json             spell/item/icon/pillar/wand sprite data, imported and built in
   style.css
-  data/*.json             spell/item/icon/pillar/wand sprite data
+  public/                 fonts and images, copied to the build as they are
+dist/web/                 Vite build output; gitignored
 test/
   fixtures/               generated payloads, salakieli samples (move from mod_testing/)
-  *.test.ts               node:test
+  *.test.ts               vitest
 ops/
   config.sh               operational names shared by the scripts below
   setup.sh                create the volume, check or generate secrets
@@ -397,12 +400,13 @@ Key decisions:
 - Be as strict about data content as sqlite allows. Every table is `STRICT`, so column types are enforced. Connection setup runs `PRAGMA foreign_keys = ON`, which is off by default. JSON columns carry `CHECK (json_valid(col))`. Every timestamp column is `INTEGER` unix milliseconds, stated in a comment on the column and in the name (`*_at`); the data-acceptance and migration code never passes a Date or string to sqlite. Operational pragmas (journaling, sync, timeouts) stay at their defaults.
 - `run` and `player` in the canonical snapshot are `null` when the mod generation that sent the payload did not include those sections at all, rather than filled with invented zeros.
 - Twitch user ids are strings end to end. Twitch supplies them as strings, the JWT carries a string, and the current Mongo `Number` type is an unnecessary narrowing. Never convert to `Number`. The migration script coerces existing numeric ids back to strings. Compare ids as strings everywhere (socket routing, session, lookups).
-- The viewer page is static HTML. It fetches `/api/streamer/:name` for the initial state, then opens the websocket. The server never renders templates with data in them.
+- The viewer page is a static HTML shell plus a bundled script. It fetches `/api/streamer/:name` for the initial state, then opens the websocket. The server never renders templates with data in them.
+- The game data (spells, icons, items, pillars, wand sprites) are JSON files imported by the frontend and built into the bundle. They are constants, not something fetched at runtime.
 - The index page needs login state and the release list. Template literal plus an HTML escape helper. No template engine.
-- Node 26 runs `.ts` directly. Avoid enums, namespaces, and parameter properties so type stripping works. `tsc --noEmit` in CI.
+- The server has no build step: Node 26 runs its `.ts` directly. Avoid enums, namespaces, and parameter properties so type stripping works. The frontend is the only thing that is built. `tsc --noEmit` covers both in CI.
 - Stats decrypt: AES-CTR via `crypto.subtle` as today, then a real XML parser. The three samples in `mod_testing/` with their expected `.lua` output are the test.
 - Bundle: load the mod zip with a library, add the four per-user files, stream the result. No hand-written zip structures.
-- Static files served by Node in all environments. A reverse proxy in front is optional.
+- Static files served by Node in all environments, from the Vite build output. Built assets have content hashes in their filenames and are served as immutable; the HTML entry points are served with revalidation. This replaces the old tree's modification-time query strings. A reverse proxy in front is optional.
 - Code style: Prettier with the repo's existing rules plus semicolons. Applied to the rewrite's own files only; the old app and the mod are left as they are.
 
 ## Secrets
@@ -452,7 +456,7 @@ In deployment the environment is defined in exactly one place, `ops/reload.sh`, 
 
 ## Deployment
 
-- `Dockerfile`: `node:26-slim`, copy `package.json` and the pnpm lockfile, `pnpm install --frozen-lockfile --prod`, copy `server/` and `mod/` (and `web/` from Phase 2), run as non-root, `node server/main.ts`. No build stage: Node runs the TypeScript directly.
+- `Dockerfile`, two stages on `node:26-slim`. The build stage installs all dependencies and runs `vite build`. The runtime stage installs production dependencies only, copies `server/`, `mod/`, and the built `dist/web/`, and runs `node server/main.ts` as non-root.
 - No docker compose. Shell scripts in `ops/` cover the basic tasks and share `ops/config.sh`, which holds the operational names: image, container, volume, host port, secrets directory. Each name can be overridden from the caller's environment for one invocation.
   - `ops/setup.sh` creates the volume and checks that the secret files exist. With `--generate-secrets` it also creates the secrets directory and generates `session_secret` and `jwt_secret` if they are absent. It never overwrites a file and never generates the Twitch client secret, which comes from Twitch. A generated `jwt_secret` is only right for a new deployment: at cutover that file must hold the old server's `JWT_SECRET`.
   - `ops/rebuild.sh` builds the image from the checkout, tagged `latest` and with the git revision.
@@ -482,18 +486,51 @@ Each phase ends in something runnable. Phase 0 and Phase 1 are ordered; later ph
 - [x] `ws.ts`: upgrade routing (`/<jwt>` and `/client=<name>`), ticket verification, viewer name resolution to id, persistence, fan-out by id, ping/pong reaping every 30s. A viewer is sent the current snapshot as soon as it connects.
 - [x] `app.ts` and `main.ts`: HTTP server with `/healthz` and `/api/streamer/:name`, websocket upgrade attached, clean shutdown on SIGTERM.
 - [x] Tests: fake mod sends each wire fixture, fake viewer receives the expected canonical snapshot, row is updated at the current schema version.
-- [ ] Dockerfile and `ops/` scripts, so Phase 1 runs the same way production will. Written, and the setup script's logic exercised against a stub; not yet built or run for real, since the development container has no Docker.
+- [ ] Dockerfile and `ops/` scripts, so Phase 1 runs the same way production will. Written, and the setup script's logic exercised against a stub. **The Dockerfile has never been built and the ops scripts have never run against real Docker**, since the development container has none. Build and run once before relying on them.
 - [ ] Point a dev `host.lua` at the new server and confirm the unchanged mod connects and updates.
 
 Done when: a real mod instance talks to the new server with no Lua changes.
 
 ### Phase 2: viewer page
 
-- [ ] `GET /api/streamer/:name` and the static `streamer.html`.
-- [ ] Port rendering from `public/main.js`, one component at a time, reading the canonical shape and doing formatting only: wand stats, wand deck and always-cast, spell tooltips, inventory, items and item tooltips, progress (perks, spells, enemies, pillars), run info and shifts, Apotheosis creature shifts, player info and map.
-- [ ] Websocket client with reconnect, and the auto-refresh toggle the current page has.
-- [ ] Convert `public/*.js` data files (including `pillars.js`, `pillarsApoth.js`) to `web/data/*.json` with a one-off script. Keep the script.
-- [ ] Compare against the Phase 0 screenshot after each component.
+- [x] Vite build for the frontend: Preact and TypeScript under `web/src/`, HTML entry points, hashed output in `dist/web/`. The game data builds into its own file, so a code change does not make browsers download it again.
+- [x] Server: serve `dist/web/`. `/streamer/:name` answers the viewer page for a known streamer and the not-found page with a 404 status otherwise.
+- [x] Convert `public/*.js` data files to `web/data/*.json` with `scripts/convert-data.mjs`, imported by the frontend and built in.
+- [x] Port rendering from `public/main.js`, reading the canonical shape and doing formatting only: wands, spells and tooltips, inventory, items, player and perks, shifts, mods, feature status, map, pillars, progress tables with search.
+- [x] The shifts calculation is tested against a copy of the old function, on hand-picked cases and 2,000 generated sequences per kind.
+- [x] Tooltips positioned with `@floating-ui/dom`, bundled.
+- [x] Websocket client with reconnect, and the auto-refresh toggle.
+- [x] Tests of the page's logic. Layout and styling are deliberately not tested; appearance is checked by eye.
+  - `test/web/`: the functions that decide what the page says, called directly. Health wording, spell stat formatting, wand stats and simulator links, item contents, perk resolution, map location, and the search matcher.
+  - `test/page.integration.test.ts`: the built page in a real browser against a real server, for what only exists when everything runs together. Following the mod over the websocket, pausing auto refresh, choosing the Apotheosis data set from the first snapshot, the outdated-mod warning, the no-data and not-found states, and search and progress counts. Needs Playwright's Chromium.
+  - `pnpm test` runs everything except files named `*.integration.test.ts`. `pnpm test:integration` runs only those.
+- [ ] Check the page's appearance against the live site by eye. Not done; nothing yet shows the new page looks like the old one.
+
+Bugs in the old page, fixed in the new one:
+
+- Durations took hours modulo 60 instead of 24, so a run of a day and an hour read "1days 25hr", and a unit of exactly one was left out, so 60 seconds read as nothing. Durations are now in whole days, hours, minutes and seconds.
+- A search on a damage stat scaled the typed number the wrong way: `@damage>50` multiplied 50 by 25 where it should divide. Searches on times were already right.
+- `@type=` with no type name after it highlighted every spell. It now waits for a name.
+
+To verify, and possibly a bug. Behaviour is unchanged from the old page until then:
+
+- The map preview's parallel world label, "In East 2", takes its number from the player's parallel world and its direction word from which of the map site's tile sets is being shown. For every map but Apotheosis those agree. For Apotheosis the code counts parallel worlds as 100 chunks wide and tile sets as 70. In the band from 35 to 50 chunks east or west of centre, the player is counted as in the main world while the east or west tile set is shown, and the label reads "East" or "West" with no number. Whether that is wrong depends on two things not yet checked: that Apotheosis worlds are 100 chunks wide, and that the map site's Apotheosis tile sets are 70. Note that the game repeats without limit in both directions, while the map site has only main, east and west tiles; reusing east and west tiles for worlds further out is correct and is not part of this question.
+
+Kept as the old page has it, on purpose:
+
+- Health the engine reports as `inf` or `nan` is shown as "Engine inf" and "Engine nan".
+
+Known differences from the old page, each deliberate:
+
+- Hovering a shift result highlights the row that caused it. The old code indexed cells as if the table were laid out by row, though it is laid out by column, so it likely highlighted the wrong cells. Unconfirmed against the live site.
+- The two switches the old stylesheet hid ("Show Beta Content", "Show All Progress") are not rendered.
+- A search that is not a valid pattern, or names no stat, leaves the table as it is. The old page threw.
+
+Left for later, from a review of this code:
+
+- Serve compressed assets. The data file is 2.3 MB and gzips to under 1 MB. A reverse proxy would do this; the server itself does not.
+- About half the sprite bytes in `web/data` are duplicates: every spell sprite is in both the spell data and the icon list, and the Apotheosis files repeat most of the base set.
+- The mod reports an Apotheosis creature shift as a perk whose id has the creature's id appended. The page splits that; it belongs in `fromWire`, with the creature as its own field.
 
 Done when: the page renders each fixture indistinguishably from the live site.
 
@@ -518,7 +555,7 @@ Done when: a fresh login produces a zip that installs and connects.
 
 - [ ] Delete everything the new tree replaces: `app.js`, `index.js`, `wss.js`, `controllers/`, `handlers/`, `models/`, `routes/`, `views/`, `lib/`, `public/`, `mod_testing/`, `dataprep_scripts/`, pm2 configs, `bundle`, `env.template`.
 - [ ] Rewrite README for the new setup.
-- [ ] CI: `tsc --noEmit`, `node --test`, docker build.
+- [ ] CI: `pnpm typecheck`, `pnpm test`, `pnpm build`, docker build.
 
 ### Phase 6: v2 candidates (after cutover, not scheduled)
 

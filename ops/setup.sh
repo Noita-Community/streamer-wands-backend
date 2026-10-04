@@ -9,9 +9,9 @@
 # Generated: session_secret, jwt_secret. Only when the file does not exist yet.
 # Never generated: twitch_client_secret. That value comes from the Twitch developer console.
 #
-# A generated jwt_secret is only right for a new or development deployment. When replacing the
-# previous server, copy its JWT_SECRET into the jwt_secret file instead, or every installed mod
-# stops being able to connect.
+# jwt_secret signs the token inside every mod a streamer has downloaded. Generating one is only
+# right for a deployment nobody has downloaded a mod from. For a site already in use, put its
+# existing secret in the jwt_secret file, or every installed mod stops being able to connect.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

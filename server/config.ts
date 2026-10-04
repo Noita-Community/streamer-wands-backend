@@ -2,7 +2,7 @@
 // returned as a frozen object. Nothing is read from a file implicitly. For each variable NAME,
 // NAME_FILE may point at a file holding the value instead (Docker secrets convention).
 //
-// See PLAN.md, "Configuration", for what each variable is for.
+// The variables are listed on the Config type below, each with what it is for.
 
 import { readFileSync } from 'node:fs';
 import { LOG_LEVELS, type LogLevel } from './log.ts';
@@ -38,16 +38,37 @@ export class Secret {
 }
 
 export type Config = Readonly<{
+    /** PORT. Port to listen on. Default 3000. */
     port: number;
-    /** Origin the site is reached at, e.g. https://onlywands.com. No trailing slash. */
+    /**
+     * PUBLIC_URL, required. Origin the site is reached at, e.g. https://onlywands.com, with no
+     * trailing slash. The Twitch login callback and the websocket address written into
+     * downloaded mods are derived from it.
+     */
     publicUrl: string;
+    /** TWITCH_CLIENT_ID, required. The Twitch application used for login. */
     twitchClientId: string;
+    /** TWITCH_CLIENT_SECRET, required. */
     twitchClientSecret: Secret;
+    /**
+     * JWT_SECRET, required. Signs the token in each downloaded mod. Changing it locks out every
+     * installed mod until its streamer downloads a new copy.
+     */
     jwtSecret: Secret;
+    /** SESSION_SECRET, required. Signs the website's login cookie. */
     sessionSecret: Secret;
+    /** DB_PATH. The sqlite database file. Default /data/onlywands.sqlite. */
     dbPath: string;
+    /** MOD_DIR. The mod's source tree, which downloads are built from. Default ./mod. */
     modDir: string;
+    /** WEB_DIR. Directory holding the built frontend (Vite's output). Default ./dist/web. */
+    webDir: string;
+    /**
+     * TRUST_PROXY. Set to true when a reverse proxy terminates TLS in front of this server:
+     * forwarded headers are then honoured and cookies marked Secure. Default false.
+     */
     trustProxy: boolean;
+    /** LOG_LEVEL. One of debug, info, warn, error. Default info. */
     logLevel: LogLevel;
 }>;
 
@@ -150,6 +171,7 @@ export function loadConfig(
         sessionSecret: new Secret(required('SESSION_SECRET')),
         dbPath: raw('DB_PATH') ?? '/data/onlywands.sqlite',
         modDir: raw('MOD_DIR') ?? './mod',
+        webDir: raw('WEB_DIR') ?? './dist/web',
         trustProxy: bool('TRUST_PROXY', false),
         logLevel,
     });

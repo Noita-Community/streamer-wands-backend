@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 
 import { ConfigError, Secret, loadConfig } from '../server/config.ts';
@@ -32,6 +32,7 @@ describe('loadConfig', () => {
         assert.equal(c.publicUrl, 'https://onlywands.com');
         assert.equal(c.dbPath, '/data/onlywands.sqlite');
         assert.equal(c.modDir, './mod');
+        assert.equal(c.webDir, './dist/web');
         assert.equal(c.trustProxy, false);
         assert.equal(c.logLevel, 'info');
         assert.equal(c.twitchClientId, 'client-id');

@@ -1,13 +1,15 @@
-// One-off: dump the Mongo `streamers` collection to JSON for the sqlite migration.
+// Dump the `streamers` collection of the MongoDB database the site ran on before sqlite, as
+// JSON. That file is the input for importing existing streamers into the sqlite database.
 //
 // Run from the project root on a host that is on the Mongo IP allowlist:
 //   node scripts/dump-mongo.mjs [out-file]
 //
-// Reads DATABASE from .env (same file the old app uses, via dotenv).
-// Output defaults to test/fixtures/mongo-streamers.json, relative to the project root.
+// Reads the connection string from DATABASE in .env, in the project root.
+// Output defaults to test/fixtures/mongo-streamers.json. It contains every streamer's data
+// and is gitignored.
 //
-// Uses the `mongodb` driver already present in node_modules from the old app.
-// Written for the migration only; delete with the rest of the Mongo code in Phase 5.
+// This script, and its `mongodb` and `dotenv` dev dependencies, have no use once the import
+// has been done.
 
 import 'dotenv/config';
 import { writeFile, mkdir } from 'node:fs/promises';

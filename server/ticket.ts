@@ -4,8 +4,8 @@
 // the downloaded mod as token.lua. When the mod connects, that JWT is the URL path.
 // Verifying it is the whole of "who is this socket".
 //
-// Format is fixed by every installed mod: HS256, payload { id, displayName, iat },
-// no expiry. Tokens minted by the previous server must keep verifying.
+// The format cannot change without every streamer downloading the mod again, because each
+// installed copy carries its token: HS256, payload { id, displayName, iat }, no expiry.
 
 import jwt from 'jsonwebtoken';
 
@@ -34,7 +34,8 @@ export function verifyTicket(token: string, secret: Secret): Ticket | null {
     }
     if (typeof payload !== 'object' || payload === null) return null;
     const { id, displayName } = payload as Record<string, unknown>;
-    // Twitch ids are strings. Tolerate a number in case an old token carried one, but never emit one.
+    // Twitch ids are strings, and signTicket only writes strings. A token carrying the id as a
+    // number is still accepted, since nothing in the token format rules one out.
     const idStr =
         typeof id === 'string'
             ? id

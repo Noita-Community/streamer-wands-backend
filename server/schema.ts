@@ -3,8 +3,10 @@
 //   fromWire(payload)  mod wire shape (any known generation)  ->  canonical, current version
 //   migrate(stored, v) stored canonical at row version v       ->  canonical, current version
 //
-// The canonical shape is defined by meaning, uses the engine's own field names,
-// and is what the database stores and the page receives. See PLAN.md, "Data model".
+// The wire shape is whatever a mod sends: positional arrays and delimited strings, differing
+// between mod versions. The canonical shape is one structure defined by what the data means,
+// using the game engine's own field names. It is what the database stores and what the viewer
+// page receives; the page formats it for display but never restructures it.
 
 export const SCHEMA_VERSION = 1;
 
@@ -144,6 +146,15 @@ export type Snapshot = SelectableSnapshot & {
     received_at: number;
 };
 
+/** The body of GET /api/streamer/:name: what the viewer page starts from. */
+export type StreamerResponse = {
+    streamer: { login: string | null; display_name: string };
+    /** The mod version this server hands out; the page warns when the streamer's differs. */
+    current_mod_version: string;
+    /** null when the streamer has never sent anything */
+    snapshot: Snapshot | null;
+};
+
 // ---------------------------------------------------------------------------
 // Small guards
 
@@ -177,10 +188,12 @@ const MATERIAL_ENTRY = /^([\s\S]*) \(([^()]+)\)#(-?\d+)$/;
 
 /**
  * Item descriptor as the mod builds it: `ui_sprite .. item_name .. ui_description .. "$" .. color .. contents`.
- * There are no delimiters between the first three; this relies, exactly as the current page does, on
- * item_name and ui_description being translation keys that start with `$`. Descriptors where the game
- * supplied literal text instead do not split and are kept as `unparsed`, which the page shows as an
- * empty slot, matching today's behaviour. A real serialization format is future mod work (see PLAN.md).
+ *
+ * The mod puts no delimiter between the first three. They can be told apart only because the
+ * game's item names and descriptions are normally translation keys, which start with `$`. Where
+ * the game supplies literal text instead, as it does for some modded items, the three run
+ * together and cannot be split. Such a descriptor is kept whole as `unparsed`, and the page
+ * shows an empty slot for it.
  */
 export function parseItemSlot(raw: unknown): ItemSlot {
     if (!isStr(raw) || raw === '0' || raw === '') return null;

@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
@@ -7,9 +7,9 @@ import { convertNoitaStats, decryptStats, statsXmlToLua } from '../server/stats.
 const fixture = (name: string) => new URL(`./fixtures/${name}`, import.meta.url);
 
 describe('stats', () => {
-    // Samples 0 to 2 came with expected output produced by the previous server.
+    // Samples 0 to 2 each have the Lua they must produce stored beside them.
     for (const i of [0, 1, 2]) {
-        it(`converts _stats${i}.salakieli to the same Lua as before`, async () => {
+        it(`converts _stats${i}.salakieli to its expected Lua`, async () => {
             const encrypted = readFileSync(fixture(`_stats${i}.salakieli`));
             const expected = readFileSync(fixture(`stats${i}.lua`), 'utf8');
             assert.equal(await convertNoitaStats(encrypted), expected);

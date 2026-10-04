@@ -1,7 +1,7 @@
 // End-to-end over real sockets: a fake mod pushes wire payloads in, fake viewers receive
 // canonical snapshots out.
 
-import { after, before, describe, it } from 'node:test';
+import { afterAll, beforeAll, describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
@@ -77,16 +77,22 @@ class Client {
 describe('app', () => {
     let clock = 1_760_000_000_000;
     const db = openDb(':memory:');
-    const app = createApp({ db, jwtSecret: SECRET, log: silentLogger, now: () => clock });
+    const app = createApp({
+        db,
+        jwtSecret: SECRET,
+        log: silentLogger,
+        modVersion: '1.2.10',
+        now: () => clock,
+    });
     let base = '';
     const clients: Client[] = [];
 
-    before(async () => {
+    beforeAll(async () => {
         await new Promise<void>((resolve) => app.server.listen(0, '127.0.0.1', resolve));
         base = `127.0.0.1:${(app.server.address() as AddressInfo).port}`;
     });
 
-    after(async () => {
+    afterAll(async () => {
         await Promise.all(clients.map((c) => c.close()));
         await app.close();
         db.close();
@@ -203,6 +209,7 @@ describe('app', () => {
         assert.equal(res.status, 200);
         assert.deepEqual(await res.json(), {
             streamer: { login: null, display_name: 'DunkOrSlam' },
+            current_mod_version: '1.2.10',
             snapshot: db.readSnapshot(STREAMER.id),
         });
     });

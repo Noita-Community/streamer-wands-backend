@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
@@ -124,8 +124,8 @@ describe('parseItemSlot', () => {
     });
 
     it('keeps descriptors that do not split into sprite, name, description, colour', () => {
-        // Literal (non-key) names or descriptions from modded items fuse with their neighbours. Today's
-        // page cannot show these either; a proper serialization is future mod work.
+        // The mod writes sprite, name and description with nothing between them. A name or
+        // description that is literal text, not a `$key`, fuses with its neighbours.
         for (const raw of [
             'default_gun$-1',
             'data/ui_gfx/items/emerald_tablet.pngMysterious TabletKnowledge lies within.$-1',

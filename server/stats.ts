@@ -1,8 +1,10 @@
 // Noita's _stats.salakieli: AES-128-CTR encrypted XML of <E key="..." value="..."/> elements.
 // The mod wants it as a Lua table so it can mark enemies as already-killed.
 //
-// Output format matches what the previous server produced (see test/fixtures/stats*.lua):
-//   stats = {["key"]=value,\n["key"]=value}
+// The output is a Lua chunk the mod loads, one entry per line:
+//   stats = {["key"]=value,
+//   ["key"]=value}
+// test/fixtures has encrypted samples beside the Lua each must produce.
 
 import { XMLParser } from 'fast-xml-parser';
 

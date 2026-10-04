@@ -1,22 +1,32 @@
-# Streamer Wands server. Node runs the TypeScript sources directly; there is no build step.
+# Streamer Wands. Two stages: one builds the frontend, the other runs the server.
 #
-# NOTE: written without Docker available to test it. Build and run once before relying on it.
+# The server has no build step of its own; Node runs its TypeScript sources directly.
 #
 # Built by ops/rebuild.sh and run by ops/reload.sh, which is where the environment is defined.
 
-FROM node:26-slim
-
-ENV NODE_ENV=production
+FROM node:26-slim AS base
 WORKDIR /app
-
 # Keep in step with the pnpm version the lockfile was written by.
 RUN npm install --global pnpm@12.9.1
+COPY package.json pnpm-lock.yaml ./
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# --- Build the frontend into dist/web -------------------------------------------------------
+FROM base AS build
+RUN pnpm install --frozen-lockfile
+COPY vite.config.ts ./
+COPY web ./web
+# The frontend imports the snapshot types from the server's schema.
+COPY server ./server
+RUN pnpm exec vite build
+
+# --- Runtime --------------------------------------------------------------------------------
+FROM base
+ENV NODE_ENV=production
 RUN pnpm install --frozen-lockfile --prod
 
 COPY server ./server
 COPY mod ./mod
+COPY --from=build /app/dist/web ./dist/web
 
 # The sqlite database lives on a volume so it survives the container.
 RUN mkdir -p /data && chown node:node /data
