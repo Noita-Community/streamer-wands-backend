@@ -1,0 +1,51 @@
+{
+    "schema_version": 1,
+    "mod": {
+        "version": "1.2.10",
+        "features": {
+            "seed": false,
+            "pos": false,
+            "ngp": false,
+            "shifts": true,
+            "timer": true,
+            "apothCreatureShifts": true,
+            "apothCreatureTimer": true
+        }
+    },
+    "wands": [],
+    "inventory": [null, null],
+    "items": [null, null],
+    "progress": {
+        "perks": ["CRITICAL_HIT"],
+        "spells": ["APOTHEOSIS_CRYSTAL_SHOT"],
+        "enemies": ["apotheosis_fire_lukki"],
+        "pillars": ["p_boss_fire_lukki"]
+    },
+    "run": {
+        "mods": ["streamer_wands", "Apotheosis"],
+        "beta": false,
+        "ngp": null,
+        "seed": null,
+        "start_time": 1791144001000,
+        "playtime": 90
+    },
+    "player": {
+        "hp": "inf",
+        "max_hp": "inf",
+        "money": 2147483648,
+        "orbs": 11,
+        "pos": null,
+        "perks": [],
+        "fungal_shifts": { "iteration": 0, "seconds_since_last": null, "shifts": [] }
+    },
+    "apotheosis": {
+        "creature_shifts": {
+            "iteration": 2,
+            "seconds_since_last": null,
+            "shifts": [
+                [{ "from": { "id": "sheep", "ui_name": "Sheep" }, "to": { "id": "wolf", "ui_name": "Wolf" } }],
+                null
+            ]
+        }
+    }
+}

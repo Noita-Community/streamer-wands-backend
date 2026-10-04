@@ -1,0 +1,34 @@
+{
+    "wands": [
+        [
+            {
+                "sprite": "data/items_gfx/wands/wand_0007.png",
+                "ui_name": "wand",
+                "shuffle_deck_when_empty": true,
+                "mana_max": 80,
+                "mana_charge_speed": 20,
+                "reload_time": 40,
+                "actions_per_round": 1,
+                "deck_capacity": 3,
+                "spread_degrees": 5,
+                "speed_multiplier": 1,
+                "fire_rate_wait": 30
+            },
+            [],
+            ["BOMB_#1", "0", "0"]
+        ]
+    ],
+    "inventory": ["0", "0", "0", "0"],
+    "progress": [["CRITICAL_HIT"], ["BOMB"], ["player"]],
+    "runInfo": { "mods": ["streamer_wands"], "beta": false },
+    "playerInfo": {
+        "health": [20, 20],
+        "gold": 150,
+        "perks": [["$perk_extra_hp"], [1]],
+        "shiftsTotal": 1,
+        "shiftsList": ["empty"],
+        "shiftsTimer": -1,
+        "pos": [100, -250]
+    },
+    "modFeatures": { "shifts": true, "timer": true, "pos": true }
+}

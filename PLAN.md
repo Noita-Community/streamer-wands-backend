@@ -27,41 +27,49 @@ The game dumps a snapshot of the player's state to the server every few seconds,
 | File | Role |
 |---|---|
 | `mod/files/scripts/utils.lua` `serialize_data()` | Producer. What actually arrives on the wire. This is the schema. |
-| `handlers/wandHandler.js` `validate()` | Remaps the wire shape into a Vue-friendly shape and fills defaults for older mod versions. The remapping goes away; the version-upgrade intent stays. |
+| `handlers/wandHandler.js` `validate()` | Converts wire shape to a stored shape and fills defaults for older mod versions. Its stored shape was designed around Vue templates; the conversion-on-write intent stays. |
 | `public/main.js` | Consumer. Shows what each field is for and how it is decoded for display. |
 
 Other files worth reading once: `wss.js` (socket routing), `controllers/wsController.js` (broadcast and persist), `routes/index.js` (bundle download), `lib/noitastats.js` (stats decrypt), `handlers/passportHandler.js` (login and ticket minting).
 
-## Payload schema
+## Data model
 
-The wire shape, as the Lua emits it, **is** the schema. The server stores it and serves it unchanged, and the viewer page reads it directly. The current server's positional-to-named remapping (`wands[i][0]` to `wands[i].stats`, `playerInfo.perks` to `names` and `amounts`, `csShifts` to `shifts`, and so on) existed to make Vue templates easier to write and goes away. Any decoding the page needs (splitting shift strings, parsing `start`, computing idle time) is the page's job.
+Three layers, with one conversion between the first two and none between the last two:
 
-### Top level
+1. **Wire shape.** Whatever a mod sends. Positional arrays and delimited strings are wire encoding, not meaning, and several generations of it are in the field at once.
+2. **Canonical shape.** One structure defined by what the data *means*, stored in the database with a schema version, and served to the page exactly as stored. The server converts wire to canonical **on write**. Older stored rows are migrated to the current canonical version by numbered migrations, also server-side.
+3. **Presentation.** The page formats canonical data for display (numbers to strings, seconds to clocks, ids to sprites) but never restructures it. The current server's third shape, built purely for Vue templates, is what we are not repeating.
+
+### Wire shape (what the mod sends)
+
+As `serialize_data()` in `mod/files/scripts/utils.lua` emits it today. Older mods differ; see "Conversion on write".
+
+#### Top level
 
 | Key | Type | Notes |
 |---|---|---|
 | `wands` | `[stats, always_cast, deck][]` | see below |
 | `inventory` | `string[]` | `ACTION_ID_#charges`, `"0"` for an empty slot |
-| `items` | `string[]` | item ids, `"0"` for an empty slot |
+| `items` | `string[]` | item descriptor strings (see "What the dump showed"), `"0"` for an empty slot |
 | `progress` | `[perks[], spells[], enemies[], pillars[]]` | all `string[]` of ids |
 | `runInfo` | object | see below |
-| `apothInfo` | object | absent without Apotheosis. See below. **Current bug:** the validator reads `data.apothinfo` (lowercase), so production never serves it and creature shifts never display. Serving the payload as is fixes this for free. |
+| `apothInfo` | object | absent without Apotheosis. See below. **Current bug:** the validator reads `data.apothinfo` (lowercase), so production never stores it and creature shifts never display. Reading the right key fixes it. |
 | `playerInfo` | object | see below |
 | `modFeatures` | object | see below |
 | `modVersion` | string | from the injected `version.lua` |
 
-### `wands[]`
+#### `wands[]`
 
 Each wand is a three-element array: `[stats, always_cast, deck]`. `always_cast` and `deck` are `string[]` in the same `ACTION_ID_#charges` encoding as `inventory`, with `"0"` for empty deck slots. `stats`:
 
 | Key | Type | Notes |
 |---|---|---|
-| `sprite` | string | a path like `data/items_gfx/wands/wand_0001.png`. The page reduces it to the basename without extension to look up the sprite. |
+| `sprite` | string | a path like `data/items_gfx/wands/wand_0001.png` |
 | `ui_name` | string | |
 | `shuffle_deck_when_empty` | boolean | |
 | `mana_max`, `mana_charge_speed`, `reload_time`, `actions_per_round`, `deck_capacity`, `spread_degrees`, `speed_multiplier`, `fire_rate_wait` | number | |
 
-### `runInfo`
+#### `runInfo`
 
 | Key | Type | Present when |
 |---|---|---|
@@ -69,16 +77,14 @@ Each wand is a three-element array: `[stats, always_cast, deck]`. `always_cast` 
 | `beta` | boolean | always |
 | `ngp` | number | `modFeatures.ngp` |
 | `seed` | number | `modFeatures.seed` |
-| `start` | string, comma-separated UTC date parts, may be empty | always |
+| `start` | string, comma-separated UTC date parts `year,month0,day,hour,minute,second`, may be empty | always |
 | `playtime` | number, seconds | always |
 
-The current server computes `idletime` from `start`, `playtime` and the clock at receive time. The page can compute this itself and keep it ticking, which is better than a value frozen at the last snapshot.
-
-### `playerInfo`
+#### `playerInfo`
 
 | Key | Type | Present when | Notes |
 |---|---|---|---|
-| `health` | `[hp, max_hp]` as **strings** | always | strings on purpose, to carry `inf` and `nan`. Page multiplies by 25 and handles the special cases. |
+| `health` | `[hp, max_hp]` as **strings** | always | strings on purpose, to carry `inf` and `nan`. Game units; display multiplies by 25. |
 | `gold` | number | always | |
 | `orbs` | number | always | |
 | `pos` | `[x, y]` | `modFeatures.pos` | |
@@ -87,7 +93,7 @@ The current server computes `idletime` from `start`, `playtime` and the clock at
 | `shiftsList` | `string[]` | `modFeatures.shifts` | one entry per shift, `"empty"` if unknown. Entries are `id%@%Display Name` joined by `<,>`. |
 | `shiftsTimer` | number, `-1` when expired | `modFeatures.timer` | |
 
-### `apothInfo`
+#### `apothInfo`
 
 | Key | Type | Present when | Notes |
 |---|---|---|---|
@@ -95,27 +101,157 @@ The current server computes `idletime` from `start`, `playtime` and the clock at
 | `csTimer` | number | `modFeatures.apothCreatureTimer` | |
 | `csShifts` | `string[]` | `modFeatures.apothCreatureShifts` | same encoding as `shiftsList` |
 
-### `modFeatures`
+#### `modFeatures`
 
-Booleans `seed`, `pos`, `ngp`, `shifts`, `timer`, `apothCreatureTimer`, `apothCreatureShifts`. Lua emits `ModSettingGet` results; `nil` vanishes from the JSON, so a missing key means `false`. The page keys off these to decide what to show, so a feature being off and a key being absent are the same thing.
+Booleans `seed`, `pos`, `ngp`, `shifts`, `timer`, `apothCreatureTimer`, `apothCreatureShifts`. Lua emits `ModSettingGet` results; `nil` vanishes from the JSON, so a missing key means `false`.
+
+### Canonical shape (version 1)
+
+Defined by meaning. Named fields, no positional arrays, no delimited strings. Rulings that shaped it:
+
+- **Engine names, not presentation names.** Fields keep the identifiers the game uses (`fire_rate_wait`, `reload_time`, `deck_capacity`, `uses_remaining`) so that reasoning about the code never involves a mental remapping. Human labels are a presentation concern: one constant on the page maps field to label.
+- **Sentinels from the engine stay; sentinels from the mod become `null`.** `uses_remaining: -1` is the game's own value for unlimited and is kept. The shift timer's `-1` is assigned by the mod's Lua and becomes `null`.
+- **Slot arrays are fixed-length with `null` for empty, but no code or type assumes a particular length.** Sixteen spells and four items are what the vanilla game has today; a mod can change either. The wire gives us the gaps, so lengths come from the data.
+- **No duplicated timestamp.** The row's `updated_at` is the single source. It is copied onto the served object at serve time under `receivedAt`, never stored in the JSON.
+- **Items are parsed into structure on write, exactly the way the current page parses them, no more and no less.** The mod writes `sprite .. item_name .. ui_description .. "$" .. colour .. contents` with no delimiters between the first three (unchanged since items were added in PR #13). The page relies on name and description being translation keys that start with `$` and splits on that. The parser does the same. When the game supplies literal text instead (modded items, some descriptions), the descriptor does not split; the page shows nothing today, and the parser stores `unparsed` with the raw string, which displays the same way. No heuristic recovery. 7 of 669 distinct descriptors in the dump are in this state. **Future mod work:** give the item descriptor a real delimiter-based or JSON serialization and have `fromWire` prefer it; see Phase 6.
+
+```ts
+type Snapshot = {
+    schema_version: 1
+    mod: {
+        version: string | null            // null for mods that predate version.lua
+        features: {                        // missing on the wire means false
+            seed: boolean
+            pos: boolean
+            ngp: boolean
+            shifts: boolean
+            timer: boolean
+            apothCreatureShifts: boolean
+            apothCreatureTimer: boolean
+        }
+    }
+    wands: Wand[]
+    inventory: SpellSlot[]                 // fixed-length, null = empty slot
+    items: ItemSlot[]                      // fixed-length, null = empty slot
+    progress: {
+        perks: string[]
+        spells: string[]
+        enemies: string[]
+        pillars: string[]
+    }
+    run: {
+        mods: string[]
+        beta: boolean
+        ngp: number | null                 // null when the feature is off
+        seed: number | null                // null when the feature is off
+        start_time: number | null          // unix ms; null when the mod did not record one
+        playtime: number                   // seconds
+    }
+    player: {
+        hp: string                         // game units, string so "inf"/"nan" survive
+        max_hp: string
+        money: number
+        orbs: number
+        pos: { x: number, y: number } | null
+        perks: { id: string, count: number }[]      // most recent first
+        fungal_shifts: {
+            iteration: number
+            seconds_since_last: number | null       // null when feature off or mod reported expired
+            shifts: Shift[] | null                  // null when the feature is off
+        }
+    }
+    apotheosis: {
+        creature_shifts: {
+            iteration: number
+            seconds_since_last: number | null
+            shifts: Shift[] | null
+        }
+    } | null                                        // null when Apotheosis is not installed
+}
+
+type Wand = {
+    sprite_file: string                    // as the game reports it; the page derives the sprite key
+    ui_name: string
+    mana_max: number
+    mana_charge_speed: number
+    reload_time: number                    // frames
+    actions_per_round: number
+    deck_capacity: number
+    shuffle_deck_when_empty: boolean
+    spread_degrees: number
+    speed_multiplier: number
+    fire_rate_wait: number                 // frames
+    always_cast: Spell[]
+    deck: SpellSlot[]                      // fixed-length, null = empty slot
+}
+
+type Spell = { action_id: string, uses_remaining: number | null }   // -1 = unlimited, from the engine; null = mod did not report charges
+type SpellSlot = Spell | null
+
+type ItemSlot =
+    | {
+          kind: 'item'
+          ui_sprite: string
+          item_name: string                // translation key with its leading $, as the game stores it
+          ui_description: string
+          color: number | null             // ABGR packed, potions and stashes only
+          contents: { material: string, ui_name: string, amount: number }[]
+      }
+    | { kind: 'unparsed', raw: string }  // did not split; shown as an empty slot, as today
+    | null
+
+type Shift = { from: Material, to: Material }[] | null       // one shift may convert several inputs; null = mod could not read it
+type Material = { id: string, ui_name: string }
+```
+
+Field names in `Wand` and `Spell` are the engine's component fields. `player.hp`, `max_hp`, `money` are the engine's `DamageModelComponent` and `WalletComponent` fields. `fungal_shifts.iteration` is the engine's `fungal_shift_iteration`. Where a value has no engine name (`contents`, `seconds_since_last`) the name says what it means.
+
+### Conversion on write
+
+One function per concern in `schema.ts`:
+
+- `fromWire(payload: unknown, now: number): Snapshot | null`. Recognises every wire generation **by shape**, never by a version field, because `modVersion` only exists in current-generation mods and older ones sent nothing that identifies them. Known older shapes, from the server history and the dump: a bare array of wands as the whole payload; no `items`; `progress` with three arrays instead of four; `health` as numbers rather than strings; no `orbs`, `start` or `playtime`; no `modFeatures`. Each rule in the function names the shape it recognises. Returns null only when the input is not recognisable as a snapshot at all.
+- `migrate(stored: unknown): Snapshot`. Takes a stored row at any canonical version and applies the numbered migrations up to the current one. Version 1 has no migrations yet; this exists so the first schema change has somewhere to go.
+
+Rows carry `schema_version`. On read, a row below the current version is migrated and written back. On write, the incoming payload always lands at the current version. The page therefore only ever sees the current canonical shape.
+
+The defaults and type coercions in the current validator exist to **migrate older mod payloads forward**, not to express intended values; `fromWire` carries that intent. Where the wire genuinely has no information, the canonical shape says so with `null` rather than inventing a value.
 
 ### Broadcast envelope
 
-Viewers currently receive the snapshot wrapped with `type: "wands"`. The new page is written at the same time as the new server, so the envelope is ours to choose. Simplest: the websocket sends the same JSON the `/api/streamer/:name` endpoint returns.
+Viewers receive the canonical snapshot. The websocket sends the same JSON the `/api/streamer/:name` endpoint returns; no `type` wrapper.
 
 ### Validation stance
 
 The streamer is authenticated, so the server does not defend against hostile payloads in depth. It does need to:
 
-- Reject non-JSON and non-objects.
+- Reject non-JSON and anything `fromWire` does not recognise.
 - Cap frame size. A few hundred KB is generous.
-- Upgrade older payloads to the current wire shape, see below.
+- Guarantee that what it stores and serves conforms to the canonical type, so the page can rely on it.
 
-Everything else is the page's responsibility. The page must tolerate missing or malformed fields and render what it can; a bad wand should not blank the page.
+The page must still render partial data gracefully (an unknown spell id, a sprite that does not exist), but it never has to guess at structure.
 
-The defaults and type coercions in the current validator exist to **migrate older mod payloads forward**, not to express intended values. Streamers run whatever mod version they last downloaded, so the server always sees a mix of payload versions. `schema.ts` is therefore a type definition for the current wire shape plus an upgrade step that brings older payloads to it (fill in what an older mod did not send, re-encode what it sent differently). Right now the only known differences between versions are absent keys, so the upgrade step is close to empty; it exists so that when v2 changes the wire format it is the one place that grows.
+Fixtures: wire-shape inputs for each generation (current vanilla minimal, current all features, current Apotheosis, middle generation, oldest bare array) paired with their expected canonical output, plus edge cases (`inf` health, `"empty"` shifts, empty `start`). Real captures are checked against them when available but are not blocking.
 
-Fixtures are generated from this schema: vanilla minimal, vanilla all features on, Apotheosis all features on, plus edge cases (`inf` health, `"empty"` shifts, missing optional keys, empty `start`). Real captures are checked against them when available but are not blocking.
+### What the dump showed
+
+917 streamer rows, 2026-10-04. Ids are already strings. No case-insensitive display name collisions. 12 display names are Japanese.
+
+Every stored snapshot is in a **server-converted shape**, not a raw client payload. Even the oldest server mapped wands to `{stats, always_cast, deck}` before storing. So the dump is not a corpus of wire payloads; it is a corpus of old stored shapes across several server generations, and Mongoose left stale fields behind when later schemas stopped writing them. It is the input to the one-off Mongo import, which maps each of these shapes to canonical version 1. Shapes present:
+
+| Rows | Generation | Marks |
+|---|---|---|
+| 216 | oldest | only `wands`, `inventory`, sometimes `items`; many empty |
+| 313 | middle | adds `progress` as `[{perks, spells, enemies}]`, `version` as a string array, `info` as `[{names, amounts, shifts, shiftInfo, health, gold, x, y}]` |
+| 388 | current | `modVersion`, `modFeatures`, `runInfo`, `playerInfo`, `apothInfo`, `progress` as an object (older ones lack `pillars`); about a third also carry stale `info` and `version` from the middle generation |
+
+Confirmations and corrections to the schema tables:
+
+- `apothInfo.shifts` is empty in all 388 current-generation rows. The lowercase-key bug is confirmed.
+- `runInfo.beta` is stored as the string `"true"` because the Mongo schema typed it `String`. The wire value is a boolean.
+- `playerInfo.health` is numeric in rows written by older servers and string in current ones. The wire value today is a pair of strings.
+- `runInfo.start` is stored as an ISO date, the wire value is comma-separated parts, and `idletime` is server-computed. The migration must reverse both.
+- `items` entries are long descriptor strings: sprite path, name key, description key, then `$color@Material (id)#count` repeated for containers. The page parses them; the server treats them as opaque strings.
 
 ## Authentication
 
@@ -128,9 +264,10 @@ There are two separate mechanisms in the current code and the word "ticket" only
 
 ### v1: compatible
 
-- Websocket authentication stays exactly as is: HS256 JWT with payload `{ id, displayName, iat }` signed with `JWT_SECRET`, no expiry, verified from the URL path on upgrade. Reimplement with `node:crypto`. Must verify tokens minted by the current server, since every installed mod carries one.
+- Websocket authentication stays exactly as is: HS256 JWT with payload `{ id, displayName, iat }` signed with `JWT_SECRET`, no expiry, verified from the URL path on upgrade. Keep `jsonwebtoken`, pin HS256, and validate the decoded payload's contents. Must verify tokens minted by the current server, since every installed mod carries one. Tests use synthetic tokens signed with a test secret; nothing about a production token is special, and the real check is logging in to the replacement app once it is up.
 - `id` is Twitch's string id and stays a string. Internally everything keys on it: the socket a mod opens, the viewers subscribed to it, the database row. See Identity and names for how a viewer URL resolves to an id.
 - Website login: Twitch OAuth with two `fetch` calls, then an HMAC-signed cookie holding `{ id }`. No server-side session store. Request no scopes; `/helix/users` with the user's token returns `id`, `login` and `display_name`, all of which are written to the row.
+- The session cookie has a fixed name (`session`) and is set with `HttpOnly`, `SameSite=Lax`, and `Secure` whenever `TRUST_PROXY` is on. The old app took the cookie name from a `SESSION_KEY` env var that the README described as a secret, so production has a random cookie name, and it passed `secure` where express-session ignores it, so the cookie was never marked Secure. Existing sessions do not carry over; users log in once after cutover.
 - Store the OAuth grant. Even with no scopes, Twitch issues an access token and a refresh token at login, and Twitch policy requires apps to validate user tokens hourly while in use. Keeping the grant is what lets us later detect that a user has disconnected the app from their account. The columns exist in v1 so the data is there; the sweeper that uses them is later work.
 - The `tokens` collection only caches the last-minted JWT for `/auth/ticket`. The JWT is deterministic from id and name plus the signing time, so re-minting on demand serves the same purpose. Drop the collection. `JWT_REFRESH_SECRET` is unused in practice and goes away.
 
@@ -155,25 +292,26 @@ Rules:
 Tables:
 
 ```sql
-streamers (
-  id            TEXT PRIMARY KEY,
-  login         TEXT UNIQUE,
-  display_name  TEXT NOT NULL,
-  snapshot      TEXT,
-  updated_at    INTEGER
-);
+CREATE TABLE streamers (
+  id              TEXT PRIMARY KEY,
+  login           TEXT UNIQUE,
+  display_name    TEXT NOT NULL,
+  snapshot        TEXT CHECK (snapshot IS NULL OR json_valid(snapshot)),  -- canonical JSON
+  schema_version  INTEGER CHECK ((snapshot IS NULL) = (schema_version IS NULL)),
+  updated_at      INTEGER                   -- unix ms of the last snapshot write
+) STRICT;
 CREATE INDEX streamers_display_name ON streamers (display_name COLLATE NOCASE);
 
-twitch_grants (
-  streamer_id        TEXT PRIMARY KEY REFERENCES streamers(id),
+CREATE TABLE twitch_grants (
+  streamer_id        TEXT PRIMARY KEY REFERENCES streamers(id) ON DELETE CASCADE,
   access_token       TEXT NOT NULL,
   refresh_token      TEXT NOT NULL,
-  expires_at         INTEGER NOT NULL,
-  scopes             TEXT NOT NULL,      -- empty string today
-  granted_at         INTEGER NOT NULL,
-  last_validated_at  INTEGER,
-  revoked_at         INTEGER
-);
+  expires_at         INTEGER NOT NULL,      -- unix ms
+  scopes             TEXT NOT NULL,         -- space-separated; empty string today
+  granted_at         INTEGER NOT NULL,      -- unix ms
+  last_validated_at  INTEGER,               -- unix ms
+  revoked_at         INTEGER                -- unix ms
+) STRICT;
 ```
 
 A streamer row without a grant row is a migrated user who has not logged in since. Tokens are secrets; the backup procedure and any log output must treat the grants table accordingly.
@@ -201,16 +339,17 @@ The goal is to remove dependencies that do trivial work or duplicate Node built-
 | XML parsing for the stats file | library: `fast-xml-parser` (or keep `htmlparser2`) | real parser, handles escaping and attribute edge cases the regex version in the TS branch does not. `fast-xml-parser` is dependency-free; `htmlparser2` pulls four transitive packages. |
 | HTTP routing, static files, cookies, sessions | built-ins | the routing table is six routes; `node:http` plus a small matcher is enough |
 | Multipart upload | built-in `Response.formData()` | one small file, one field |
-| JWT HS256 | built-in `node:crypto` | sign and verify are a few lines; no header variants, no algorithms list to get wrong because we only ever accept HS256 |
+| JWT HS256 | keep `jsonwebtoken` | a security boundary involving crypto. Pin `algorithms: ['HS256']` on verify and validate the payload contents ourselves. |
+| Package manager | `pnpm` | the person running the project runs `pnpm install` on the host so links and permissions are right; agents and scripts do not run it |
 | Twitch OAuth and Helix API | built-in `fetch`, thin hand-written client | the surface is four endpoints: authorize redirect, token exchange and refresh, `/oauth2/validate`, `/helix/users`. `twurple` was considered and rejected: our use is too thin to justify it. This is a place where roll-our-own is the simpler option. |
 | Config | built-in | explicit, see Configuration |
 | Database | built-in `node:sqlite` | |
 | Templating | none | one page needs login state and a list; a template literal and an escape helper |
 | Frontend framework | none | small snapshot, full re-render every few seconds is fine |
 | Type checking | dev: `typescript` | `tsc --noEmit` only; Node strips types at runtime |
-| Tests | built-in `node:test` | |
+| Tests | built-in `node:test` | the tests then run under the same loader as the server. Revisit if the page ever needs DOM tests. |
 
-Expected runtime dependencies: `ws`, `fflate`, `fast-xml-parser`. If something else in this list turns out to be non-trivial in practice, add a library rather than fight it; update this table when that happens.
+Expected runtime dependencies: `ws`, `fflate`, `fast-xml-parser`, `jsonwebtoken`. `mongodb` and `dotenv` stay as dev dependencies until Phase 5 so the dump script keeps working. If something else in this list turns out to be non-trivial in practice, add a library rather than fight it; update this table when that happens.
 
 ## Target architecture
 
@@ -220,7 +359,7 @@ server/
   main.ts                 wire everything up, listen
   config.ts               explicit env loading, see Configuration
   db.ts                   node:sqlite open, migrate, upsert/find streamer
-  schema.ts               wire shape types and old-payload upgrade
+  schema.ts               canonical types, fromWire(), migrate()
   jwt.ts                  HS256 sign/verify
   session.ts              HMAC-signed cookie get/set/clear
   http.ts                 tiny router over node:http, static files, error pages
@@ -251,7 +390,9 @@ README.md
 
 Key decisions:
 
-- Store the snapshot as one JSON column, exactly as received after upgrade, on the `streamers` row defined under Identity and names. No per-field tables.
+- Store the canonical snapshot as one JSON column on the `streamers` row defined under Identity and names. No per-field tables.
+- Be as strict about data content as sqlite allows. Every table is `STRICT`, so column types are enforced. Connection setup runs `PRAGMA foreign_keys = ON`, which is off by default. JSON columns carry `CHECK (json_valid(col))`. Every timestamp column is `INTEGER` unix milliseconds, stated in a comment on the column and in the name (`*_at`); the data-acceptance and migration code never passes a Date or string to sqlite. Operational pragmas (journaling, sync, timeouts) stay at their defaults.
+- `run` and `player` in the canonical snapshot are `null` when the mod generation that sent the payload did not include those sections at all, rather than filled with invented zeros.
 - Twitch user ids are strings end to end. Twitch supplies them as strings, the JWT carries a string, and the current Mongo `Number` type is an unnecessary narrowing. Never convert to `Number`. The migration script coerces existing numeric ids back to strings. Compare ids as strings everywhere (socket routing, session, lookups).
 - The viewer page is static HTML. It fetches `/api/streamer/:name` for the initial state, then opens the websocket. The server never renders templates with data in them.
 - The index page needs login state and the release list. Template literal plus an HTML escape helper. No template engine.
@@ -298,19 +439,20 @@ Each phase ends in something runnable. Phase 0 and Phase 1 are ordered; later ph
 
 ### Phase 0: schema and fixtures
 
-- [ ] Decode one real production ticket to confirm the payload and algorithm.
-- [ ] Write `schema.ts` from the tables above: wire shape types plus the upgrade step for older payloads.
-- [ ] Generate fixtures from the schema: vanilla minimal, vanilla all features, Apotheosis all features, edge cases.
+- [x] Dump the Mongo `streamers` collection to JSON (`scripts/dump-mongo.mjs`, run on an allowlisted host; output is gitignored because it is user data). See "What the dump showed".
+- [ ] Settle the canonical shape (the open points under "Canonical shape").
+- [ ] Write `schema.ts`: canonical types, `fromWire` recognising every wire generation, `migrate` with an empty migration list.
+- [ ] Fixtures: wire input and expected canonical output per generation, plus edge cases.
 - [ ] Move `mod_testing/` samples to `test/fixtures/` and write the stats decrypt test.
-- [ ] Save a DOM dump and screenshot of a live streamer page for visual comparison.
-- [ ] Dump the Mongo `streamers` collection to JSON.
+- [x] Rendered DOM dumps of the production pages (`scripts/dump-reference.mjs`, output in `reference/`, gitignored and regenerable until cutover). Covers the streamer page with default toggles and with every toggle on, the no-such-streamer page, and the logged-out index. No screenshots; the DOM is the reference.
+- [x] Logged-in index page dump, in `reference/index-logged-in.html`. The picker offers one version only (1.2.10), which supports release option (b) in Phase 3.
 - [ ] Opportunistically capture a few real websocket payloads and compare to fixtures. Not blocking.
 
 ### Phase 1: core server (critical path)
 
 - [ ] `config.ts`, `db.ts` with schema and migrations, `jwt.ts`, `schema.ts`.
 - [ ] `ws.ts`: upgrade routing (`/<jwt>` and `/client=<name>`), ticket verification, viewer name resolution to id, persistence, fan-out by id, ping/pong reaping every 30s.
-- [ ] Tests: fake mod sends each fixture, fake viewer receives it unchanged, row is updated.
+- [ ] Tests: fake mod sends each wire fixture, fake viewer receives the expected canonical snapshot, row is updated at the current schema version.
 - [ ] Dockerfile and compose, so Phase 1 runs the same way production will.
 - [ ] Point a dev `host.lua` at the new server and confirm the unchanged mod connects and updates.
 
@@ -319,7 +461,7 @@ Done when: a real mod instance talks to the new server with no Lua changes.
 ### Phase 2: viewer page
 
 - [ ] `GET /api/streamer/:name` and the static `streamer.html`.
-- [ ] Port rendering from `public/main.js`, one component at a time, reading the wire shape directly: wand stats, wand deck and always-cast, spell tooltips, inventory, items and item tooltips, progress (perks, spells, enemies, pillars), run info and shifts, Apotheosis creature shifts, player info and map.
+- [ ] Port rendering from `public/main.js`, one component at a time, reading the canonical shape and doing formatting only: wand stats, wand deck and always-cast, spell tooltips, inventory, items and item tooltips, progress (perks, spells, enemies, pillars), run info and shifts, Apotheosis creature shifts, player info and map.
 - [ ] Websocket client with reconnect, and the auto-refresh toggle the current page has.
 - [ ] Convert `public/*.js` data files (including `pillars.js`, `pillarsApoth.js`) to `web/data/*.json` with a one-off script. Keep the script.
 - [ ] Compare against the Phase 0 screenshot after each component.
@@ -338,7 +480,7 @@ Done when: a fresh login produces a zip that installs and connects.
 
 ### Phase 4: migration and cutover
 
-- [ ] Script: Mongo dump JSON to sqlite rows, carrying `id` (as a string) and `name` as `display_name`, with `login` left null. Stored Mongo snapshots are in the old remapped shape; either map them back to wire shape or drop them. Recommended: drop them. They are stale the moment the streamer next plays, and the page shows an empty state until then.
+- [ ] Script: Mongo dump JSON to sqlite rows, carrying `id` (as a string) and `name` as `display_name`, with `login` left null. For snapshots, map each old stored shape (see "What the dump showed") directly to canonical version 1 and keep it if the result conforms. Pages for streamers who never reconnect then keep showing their last state, as they do today. Rows with no usable snapshot get `NULL`. This mapping lives in the import script, not in `schema.ts`; it runs once.
 - [ ] Run the new container alongside the old process on a second port.
 - [ ] Switch the proxy. Keep the old process for 24 hours.
 - [ ] Rotate the Twitch client secret and retire the Mongo cluster.
@@ -353,7 +495,7 @@ Done when: a fresh login produces a zip that installs and connects.
 
 - Authentication: revisit websocket authentication and login once v1 is live. See the Authentication section for the notes to pick up.
 - Name resolution via the Helix API, an LRU cache in front of it, and the grant validation sweeper. See "Later: name resolution and grant validation".
-- Payload v2: a cleaner wire format (named fields instead of positional arrays, structured shifts instead of delimited strings). Needs a mod release; the server upgrade step accepts both for a cycle using `modVersion` to switch.
+- Payload v2: a cleaner wire format (named fields instead of positional arrays, structured shifts instead of delimited strings, and above all a real serialization for item descriptors, which today concatenate sprite, name and description with no delimiter and only parse because vanilla names are `$keys`). Needs a mod release; `fromWire` recognises both shapes for a cycle. Until then, "update your mod" is the answer to a descriptor that does not parse.
 - Extract base64 sprites to PNG files or a spritesheet.
 
 ## Open questions
@@ -362,11 +504,11 @@ Done when: a fresh login produces a zip that installs and connects.
 2. Should viewer pages keep working for streamers who have never connected since the migration? Recommended yes; the migration carries names and ids anyway.
 3. `runInfo.start` can be an empty string. Decide what the page shows for run time in that case.
 4. Serving `apothInfo` fixes the creature-shift display that production has silently broken. Confirm that is wanted rather than kept for parity.
-5. Migrated snapshots: drop or map back? See Phase 4.
+5. Migrated snapshots: the plan says map back. Confirm, or choose to drop them and start every page empty.
 
 ## Risks
 
 - A wrong JWT implementation breaks every installed mod at once. Mitigate with a real production ticket as a test fixture.
-- The page now reads the wire shape directly, so a misread field blanks part of the page for everyone. Mitigate with the fixture set and rendering each fixture during Phase 2.
+- A wrong `fromWire` rule stores wrong data for everyone on that mod generation. Mitigate with the per-generation fixture pairs and by rendering each expected canonical fixture during Phase 2.
 - Twitch OAuth scope `user_read` is legacy. Request no scopes.
 - `node:sqlite` is marked experimental in the Node 24 docs although it needs no flag. Pin Node in the Dockerfile and `engines`.

@@ -1,0 +1,66 @@
+{
+    "wands": [
+        [
+            {
+                "sprite": "data/items_gfx/wands/wand_0042.png",
+                "ui_name": "wand",
+                "shuffle_deck_when_empty": true,
+                "mana_max": 350,
+                "mana_charge_speed": 120,
+                "reload_time": 10,
+                "actions_per_round": 3,
+                "deck_capacity": 4,
+                "spread_degrees": -2.5,
+                "speed_multiplier": 1.2,
+                "fire_rate_wait": 4
+            },
+            ["DAMAGE_#-1"],
+            ["SPEED_#-1", "0", "BOMB_#3", "0"]
+        ]
+    ],
+    "inventory": ["BOMB_#3", "0", "TELEPORT_PROJECTILE_#-1", "sampo_#-1"],
+    "items": [
+        "data/ui_gfx/items/potion.png$item_potion$item_description_potion$2946588581@Water (water)#1000@Oil (oil)#200",
+        "0",
+        "data/ui_gfx/items/beer_bottle.png$item_beer$item_description_beer$-1",
+        "mods/raksa/files/wands/carrot/ui_gfx.pngPorgandEnchanted old carrot.$-1"
+    ],
+    "progress": [
+        ["CRITICAL_HIT", "EDIT_WANDS_EVERYWHERE"],
+        ["BOMB", "LIGHT_BULLET"],
+        ["player", "sheep"],
+        ["misc_chest_rain"]
+    ],
+    "runInfo": {
+        "mods": ["streamer_wands", "noita-together"],
+        "beta": true,
+        "ngp": 1,
+        "seed": 667062290,
+        "start": "2026,9,4,13,27,43",
+        "playtime": 1754.5
+    },
+    "playerInfo": {
+        "health": ["5.3399999678135", "6.4"],
+        "gold": 2231,
+        "orbs": 3,
+        "pos": [2400.994140625, 843.9972534179688],
+        "perks": [["$perk_edit_wands_everywhere", "$perk_extra_hp"], [1, 2]],
+        "shiftsTotal": 3,
+        "shiftsList": [
+            "water%@%Water<,>oil%@%Oil",
+            "empty",
+            "lava%@%Lava<,>blood%@%Blood<,>sand%@%Sand<,>blood%@%Blood"
+        ],
+        "shiftsTimer": 127.5
+    },
+    "modFeatures": {
+        "seed": true,
+        "pos": true,
+        "ngp": true,
+        "shifts": true,
+        "timer": true,
+        "apothCreatureTimer": false,
+        "apothCreatureShifts": false
+    },
+    "modVersion": "1.2.10"
+}

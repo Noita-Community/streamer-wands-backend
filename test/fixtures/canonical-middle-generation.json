@@ -1,0 +1,53 @@
+{
+    "schema_version": 1,
+    "mod": {
+        "version": null,
+        "features": {
+            "seed": false,
+            "pos": true,
+            "ngp": false,
+            "shifts": true,
+            "timer": true,
+            "apothCreatureShifts": false,
+            "apothCreatureTimer": false
+        }
+    },
+    "wands": [
+        {
+            "sprite_file": "data/items_gfx/wands/wand_0007.png",
+            "ui_name": "wand",
+            "mana_max": 80,
+            "mana_charge_speed": 20,
+            "reload_time": 40,
+            "actions_per_round": 1,
+            "deck_capacity": 3,
+            "shuffle_deck_when_empty": true,
+            "spread_degrees": 5,
+            "speed_multiplier": 1,
+            "fire_rate_wait": 30,
+            "always_cast": [],
+            "deck": [{ "action_id": "BOMB", "uses_remaining": 1 }, null, null]
+        }
+    ],
+    "inventory": [null, null, null, null],
+    "items": [],
+    "progress": { "perks": ["CRITICAL_HIT"], "spells": ["BOMB"], "enemies": ["player"], "pillars": [] },
+    "run": {
+        "mods": ["streamer_wands"],
+        "beta": false,
+        "ngp": null,
+        "seed": null,
+        "start_time": null,
+        "playtime": 0
+    },
+    "player": {
+        "hp": "20",
+        "max_hp": "20",
+        "money": 150,
+        "orbs": 0,
+        "pos": { "x": 100, "y": -250 },
+        "perks": [{ "id": "$perk_extra_hp", "count": 1 }],
+        "fungal_shifts": { "iteration": 1, "seconds_since_last": null, "shifts": [null] }
+    },
+    "apotheosis": null
+}

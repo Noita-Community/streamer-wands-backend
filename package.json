@@ -1,35 +1,35 @@
 {
-    "name": "streamer_wands",
+    "name": "streamer-wands",
     "version": "1.2.13",
     "modVersion": "1.2.10",
-    "description": "",
-    "main": "index.js",
-    "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1"
+    "private": true,
+    "type": "module",
+    "license": "MIT",
+    "engines": {
+        "node": ">=24"
     },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
+    "scripts": {
+        "start": "node server/main.ts",
+        "dev": "node --watch server/main.ts",
+        "test": "node --test 'test/**/*.test.ts'",
+        "test:watch": "node --test --watch 'test/**/*.test.ts'",
+        "typecheck": "tsc --noEmit",
+        "format": "prettier --write ."
+    },
     "dependencies": {
-        "body-parser": "^1.20.2",
-        "connect-mongo": "^5.1.0",
-        "domutils": "^3.2.2",
-        "dotenv": "^16.0.3",
-        "express": "^4.17.1",
-        "express-session": "^1.17.3",
-        "htmlparser2": "^10.0.0",
-        "jsonwebtoken": "^9.0.0",
-        "jszip": "^3.10.1",
-        "mongoose": "^7.2.1",
-        "multer": "^1.4.5-lts.1",
-        "passport": "^0.6.0",
-        "passport-twitch-strategy": "^2.2.0",
-        "pug": "^3.0.2",
-        "uuid": "^9.0.0",
-        "ws": "^8.13.0"
+        "fast-xml-parser": "^5.2.5",
+        "fflate": "^0.8.2",
+        "jsonwebtoken": "^9.0.2",
+        "ws": "^8.18.3"
     },
     "devDependencies": {
-        "nodemon": "^3.0.1",
-        "prettier": "^3.0.3"
+        "@types/jsonwebtoken": "^9.0.10",
+        "@types/node": "^24.7.0",
+        "@types/ws": "^8.18.1",
+        "dotenv": "^16.6.1",
+        "mongodb": "^5.9.2",
+        "playwright": "^1.63.0",
+        "prettier": "^3.6.2",
+        "typescript": "^5.9.3"
     }
 }

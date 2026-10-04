@@ -4,3 +4,5 @@
 .DS_Store
 /.claude
 /config.json
+/test/fixtures/mongo-*.json
+/reference/
