@@ -60,6 +60,8 @@ const fakeTwitchFetch: typeof fetch = async (input, init) => {
     if (url.includes('/oauth2/token')) {
         const code = (init?.body as URLSearchParams).get('code') ?? '';
         if (code === 'rejected') return new Response('{}', { status: 400 });
+        // What fetch does when it cannot connect.
+        if (code === 'unreachable') throw new TypeError('fetch failed');
         return Response.json({ access_token: code, refresh_token: 'refresh', expires_in: 3600 });
     }
     const bearer = new Headers(init?.headers).get('authorization')?.replace('Bearer ', '') ?? '';

@@ -33,9 +33,10 @@ export type TwitchGrant = {
     granted_at: number;
 };
 
+/** Twitch could not be reached, or did not answer as expected. `cause` holds any underlying error. */
 export class TwitchError extends Error {
-    constructor(message: string) {
-        super(message);
+    constructor(message: string, options?: ErrorOptions) {
+        super(message, options);
         this.name = 'TwitchError';
     }
 }
@@ -55,10 +56,36 @@ export function createTwitch(options: {
     const { clientId, clientSecret, redirectUri, now = Date.now } = options;
     const request = options.fetch ?? fetch;
 
-    /** Parse a response as a JSON object, or fail saying which step went wrong. */
-    async function json(res: Response, step: string): Promise<Record<string, unknown>> {
-        if (!res.ok) throw new TwitchError(`${step}: Twitch answered ${res.status}`);
-        const body: unknown = await res.json();
+    /**
+     * Make a request to Twitch and return the JSON object it answers with. Every way that can
+     * go wrong, including never reaching Twitch at all, is a TwitchError naming the step.
+     */
+    async function call(
+        step: string,
+        url: string,
+        init: RequestInit,
+    ): Promise<Record<string, unknown>> {
+        let res: Response;
+        let body: unknown;
+        try {
+            res = await request(url, init);
+            if (!res.ok) {
+                // Twitch explains a refusal in the body's "message", for example "invalid client
+                // secret". An error body carries no tokens, so it is safe to record.
+                const reason = await res.json().then(
+                    (error: unknown) => (error as { message?: unknown } | null)?.message,
+                    () => undefined,
+                );
+                throw new TwitchError(
+                    `${step}: Twitch answered ${res.status}` +
+                        (typeof reason === 'string' ? `, "${reason.slice(0, 200)}"` : ''),
+                );
+            }
+            body = await res.json();
+        } catch (err) {
+            if (err instanceof TwitchError) throw err;
+            throw new TwitchError(`${step}: could not get an answer from Twitch`, { cause: err });
+        }
         if (typeof body !== 'object' || body === null) {
             throw new TwitchError(`${step}: Twitch sent something that is not an object`);
         }
@@ -80,34 +107,38 @@ export function createTwitch(options: {
         /** Complete a login from the code Twitch put on the redirect. */
         async login(code: string): Promise<{ user: TwitchUser; grant: TwitchGrant }> {
             const grantedAt = now();
-            const token = await json(
-                await request(TOKEN_URL, {
-                    method: 'POST',
-                    body: new URLSearchParams({
-                        client_id: clientId,
-                        client_secret: clientSecret.unwrap(),
-                        code,
-                        grant_type: 'authorization_code',
-                        redirect_uri: redirectUri,
-                    }),
+            const token = await call('exchanging the code', TOKEN_URL, {
+                method: 'POST',
+                body: new URLSearchParams({
+                    client_id: clientId,
+                    client_secret: clientSecret.unwrap(),
+                    code,
+                    grant_type: 'authorization_code',
+                    redirect_uri: redirectUri,
                 }),
-                'exchanging the code',
-            );
+            });
             const { access_token, refresh_token, expires_in, scope } = token;
             if (
                 typeof access_token !== 'string' ||
                 typeof refresh_token !== 'string' ||
                 typeof expires_in !== 'number'
             ) {
-                throw new TwitchError('exchanging the code: the token response is incomplete');
+                // Which fields came back and as what, never their values: some are credentials.
+                const got = Object.entries(token)
+                    .map(
+                        ([name, value]) =>
+                            `${name}: ${Array.isArray(value) ? 'array' : typeof value}`,
+                    )
+                    .join(', ');
+                throw new TwitchError(
+                    'exchanging the code: the token response is incomplete. Expected access_token: string, ' +
+                        `refresh_token: string, expires_in: number; got { ${got} }`,
+                );
             }
 
-            const users = await json(
-                await request(USERS_URL, {
-                    headers: { authorization: `Bearer ${access_token}`, 'client-id': clientId },
-                }),
-                'looking up the user',
-            );
+            const users = await call('looking up the user', USERS_URL, {
+                headers: { authorization: `Bearer ${access_token}`, 'client-id': clientId },
+            });
             const user: unknown = Array.isArray(users.data) ? users.data[0] : undefined;
             const { id, login, display_name } = (user ?? {}) as Record<string, unknown>;
             if (

@@ -143,10 +143,14 @@ describe('site', () => {
             assert.equal((await browser.index()).user, null);
         });
 
-        it('says so when Twitch does not complete the login', async () => {
-            const browser = new Browser();
-            assert.equal((await browser.login('rejected')).status, 502);
-            assert.equal((await browser.index()).user, null);
+        it('says so when Twitch refuses the login, or cannot be reached', async () => {
+            for (const failure of ['rejected', 'unreachable']) {
+                const browser = new Browser();
+                const res = await browser.login(failure);
+                assert.equal(res.status, 502, failure);
+                assert.match(await res.text(), /Twitch did not complete the login/);
+                assert.equal((await browser.index()).user, null);
+            }
         });
 
         it('ignores a session cookie it did not sign', async () => {
