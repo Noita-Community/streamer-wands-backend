@@ -1,43 +1,63 @@
 #!/usr/bin/env bash
-# Replace the running container with one started from the current image.
+# Replace this deployment's running container with one started from its current image.
 #
-# This is the one place the server's environment is defined. Every setting it reads is listed
-# here explicitly; server/config.ts says what each one means. The values that differ between
-# deployments come from ops/config.sh. Secret values are not in this file: the *_FILE variables
-# point at files mounted from SECRETS_DIR.
+#   --yes   do not ask before acting
+#
+# The container runs as the user who runs this script, so that it can read that user's files
+# in secrets/ and write the database in data/. It is labelled with the clone it was started
+# from, and this script will not replace a container that another clone started.
 
 set -euo pipefail
-cd "$(dirname "$0")/.."
-source ops/config.sh
+source "$(dirname "$0")/config.sh"
+cd "$REPO"
 
-if [ "$TWITCH_CLIENT_ID" = REPLACE_WITH_TWITCH_CLIENT_ID ]; then
-    echo "set TWITCH_CLIENT_ID in ops/config.sh or the environment" >&2
-    exit 1
+for arg in "$@"; do
+    case "$arg" in
+        --yes) ASSUME_YES=1 ;;
+        *) die "unknown argument: $arg" ;;
+    esac
+done
+
+load_this_deployment
+require_secrets
+[ -d "$DATA_DIR" ] || die "missing directory: $DATA_DIR (it is part of the repository)"
+
+running=0
+if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
+    running=1
+    owner="$(docker container inspect --format '{{ index .Config.Labels "onlywands.clone" }}' "$CONTAINER")"
+    if [ "$owner" != "$REPO" ]; then
+        echo "the container $CONTAINER was not started from this clone." >&2
+        echo "  it belongs to: ${owner:-an unknown clone}" >&2
+        echo "  this clone is: $REPO" >&2
+        die "if it really should be replaced from here, remove it yourself first: docker rm -f $CONTAINER"
+    fi
 fi
 
-if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
+confirm "replace the running container $CONTAINER with one from $IMAGE:latest"
+
+if [ "$running" -eq 1 ]; then
     # SIGTERM lets the server close sockets and the database cleanly.
     docker stop "$CONTAINER" >/dev/null
     docker rm "$CONTAINER" >/dev/null
     echo "stopped previous $CONTAINER"
 fi
 
+server_env 3000 /data/onlywands.sqlite /run/secrets
+env_flags=()
+for setting in "${SERVER_ENV[@]}"; do
+    env_flags+=(--env "$setting")
+done
+
 docker run --detach \
     --name "$CONTAINER" \
+    --label "onlywands.clone=$REPO" \
     --restart unless-stopped \
+    --user "$(id -u):$(id -g)" \
     --publish "127.0.0.1:$HOST_PORT:3000" \
-    --volume "$VOLUME:/data" \
+    --volume "$DATA_DIR:/data" \
     --volume "$SECRETS_DIR:/run/secrets:ro" \
-    --env PORT=3000 \
-    --env PUBLIC_URL="$PUBLIC_URL" \
-    --env LOG_LEVEL=info \
-    --env DB_PATH=/data/onlywands.sqlite \
-    --env RELEASES_DIR=./releases \
-    --env WEB_DIR=./dist/web \
-    --env TWITCH_CLIENT_ID="$TWITCH_CLIENT_ID" \
-    --env TWITCH_CLIENT_SECRET_FILE=/run/secrets/twitch_client_secret \
-    --env JWT_SECRET_FILE=/run/secrets/jwt_secret \
-    --env SESSION_SECRET_FILE=/run/secrets/session_secret \
+    "${env_flags[@]}" \
     "$IMAGE:latest" >/dev/null
 
 echo "started $CONTAINER from $IMAGE:latest for $PUBLIC_URL, on 127.0.0.1:$HOST_PORT"

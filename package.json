@@ -10,7 +10,7 @@
     },
     "scripts": {
         "start": "node server/main.ts",
-        "dev": "node --watch server/main.ts",
+        "dev": "ops/local.sh",
         "build": "vite build",
         "build:watch": "vite build --watch",
         "release": "node scripts/pack-mod.ts",

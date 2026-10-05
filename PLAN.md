@@ -389,11 +389,15 @@ test/
   harness.ts              a whole server for tests, with Twitch faked
   *.test.ts               vitest
 ops/
-  config.sh               what differs between deployments, shared by the scripts below
-  setup.sh                create the volume, check or generate secrets
+  deployments/            production.sh, dev.sh, local.sh: what each deployment is
+  config.sh               shared by the scripts below; defines the server's environment
+  setup.sh                make a clone a deployment, check or generate its secrets
   rebuild.sh              build the image
-  reload.sh               replace the running container; defines the environment
-  nginx.conf.example      nginx in front: /static/ from disk, the rest proxied
+  reload.sh               replace the running container
+  local.sh                run the server without Docker (`pnpm dev`)
+  nginx.conf.example      nginx in front: everything proxied, /static/ cached
+secrets/                  this deployment's secret files; contents gitignored
+data/                     this deployment's sqlite database; contents gitignored
 Dockerfile
 PLAN.md
 README.md
@@ -453,34 +457,39 @@ The entry point logs the resolved configuration at startup; secrets serialize as
 | `TWITCH_CLIENT_SECRET` | yes | |
 | `JWT_SECRET` | yes | must equal the current production value in v1 |
 | `SESSION_SECRET` | yes | |
-| `DB_PATH` | no, default `/data/onlywands.sqlite` | mounted volume in Docker |
+| `DB_PATH` | no, default `/data/onlywands.sqlite` | the clone's `data/` directory, mounted in Docker |
 | `RELEASES_DIR` | no, default `./releases` | the mod release zips |
 | `WEB_DIR` | no, default `./dist/web` | the built frontend |
 | `LOG_LEVEL` | no, default `info` | |
 
-In deployment the environment is defined in exactly one place, `ops/reload.sh`, with secrets supplied as `*_FILE` paths into a mounted directory. Nothing reads a file implicitly.
+The environment is defined in exactly one place, `server_env` in `ops/config.sh`, which the container and the local server both get theirs from. The Twitch client id and the three secrets are supplied as `*_FILE` paths into the clone's `secrets/` directory. Nothing reads a file implicitly.
 
 ## Deployment
 
 - `Dockerfile`, two stages on `node:26-slim`. The build stage installs all dependencies, runs `vite build`, and packs `mod/` into `releases/`. The runtime stage installs production dependencies only, copies `server/`, `releases/`, and the built `dist/web/`, and runs `node server/main.ts` as non-root. The mod's sources are not in the running image.
 - Mod releases. `pnpm release` packs `mod/` into `releases/streamer_wands--<modVersion>.zip`, and the zip is committed, so a change to the mod shows up in its pull request as a changed zip. Packing is repeatable: the same files give the same bytes. The image build packs again, so a deployment always carries the mod as it is in the checkout. Earlier versions stay in `releases/` for as long as they should be downloadable, as the escape hatch for a broken release, and are pruned by hand; about three is the intent. Changing what is on offer means rebuilding the image.
 - nginx runs in front on the host and proxies everything, websockets included. `ops/nginx.conf.example` is the starting point. Nothing is served from the host's disk, so a deployment is only ever the container and switching containers is atomic. nginx caches responses under `/static/` (`proxy_cache`) for as long as the server's `Cache-Control` allows, so static files are served by nginx after the first request for each. Serving them from disk was tried and dropped: the built files only exist inside the image, and getting them onto the host meant either copying them out or a second build there, with pages and files able to disagree in between.
-- No docker compose. Shell scripts in `ops/` cover the basic tasks and share `ops/config.sh`, which holds what differs between deployments: the public URL, the Twitch client id, and the names of the image, container, volume, host port and secrets directory. Each can be overridden from the caller's environment for one invocation, which is how a development deployment runs beside production.
-  - `ops/setup.sh` creates the volume and checks that the secret files exist. With `--generate-secrets` it also creates the secrets directory and generates `session_secret` and `jwt_secret` if they are absent. It never overwrites a file and never generates the Twitch client secret, which comes from Twitch. A generated `jwt_secret` is only right for a new deployment: at cutover that file must hold the old server's `JWT_SECRET`.
+- Three deployments: production, dev (beside production on the same host), and local (a developer's machine, plain http on localhost, which is the one place Twitch allows an http redirect). Each is a file in `ops/deployments/`, in git, holding its name, public URL and port. The Docker image and container are named after it.
+- A clone is one deployment. `ops/setup.sh <deployment>` records which in an untracked `.deployment` file, once; after that no script takes a deployment argument, and none has a default, so a clone that was never set up cannot act on anything. A clone cannot be re-pointed without deleting that file by hand.
+- Everything a deployment writes stays inside its clone: `secrets/` (the Twitch client id and secret, `jwt_secret`, `session_secret`, one value per file) and `data/` (the sqlite database). Both directories are in git with their contents ignored, and the scripts never create them, so a missing one stops the script. No path to write secrets to is ever stated, so there is no wrong place to write them. There is no Docker volume: the container runs as the operator's user with the two directories mounted, which also means the database can be inspected from the host. The Twitch client id is kept with the secrets, though it is not one, so that each deployment and each developer uses their own Twitch application without editing a committed file.
+- No docker compose. Shell scripts in `ops/` cover the basic tasks and share `ops/config.sh`. Each says which deployment, site, container and clone it is about to act on and asks before going ahead; `--yes` skips the question.
+  - `ops/setup.sh` records the deployment and checks that the secret files exist. With `--generate-secrets` it generates `session_secret` and `jwt_secret` if they are absent. It never overwrites a file and never generates the Twitch values, which come from Twitch. A generated `jwt_secret` is only right for a new deployment: at cutover that file must hold the old server's `JWT_SECRET`.
   - `ops/rebuild.sh` builds the image from the checkout, tagged `latest` and with the git revision.
-  - `ops/reload.sh` replaces the running container. It is where every environment variable is defined and passed. The container's port is published on 127.0.0.1 only.
-- Bringing up a deployment, on a host with Docker and nginx:
-  1. Clone the repository. Set `PUBLIC_URL` and `TWITCH_CLIENT_ID` in `ops/config.sh`, or pass them in the environment of each script.
-  2. In the Twitch developer console, register `<PUBLIC_URL>/auth/twitch/callback` as a redirect URL of that application.
-  3. `ops/setup.sh --generate-secrets`, then put the Twitch client secret in the `twitch_client_secret` file it names. For a deployment that replaces a server in use, put that server's `JWT_SECRET` in `jwt_secret`.
+  - `ops/reload.sh` replaces the running container. It labels the container with the clone that started it and refuses to replace one that another clone started. The container's port is published on 127.0.0.1 only.
+  - `ops/local.sh`, which `pnpm dev` runs, starts the server from the checkout without Docker, for the local deployment only.
+- Bringing up production or dev, on a host with Docker and nginx:
+  1. Clone the repository into its own directory.
+  2. In the Twitch developer console, register `<PUBLIC_URL>/auth/twitch/callback` as a redirect URL of the deployment's own Twitch application.
+  3. `ops/setup.sh <production|dev> --generate-secrets`, then put the Twitch application's client id and secret in `secrets/twitch_client_id` and `secrets/twitch_client_secret`, and run `ops/setup.sh` again to check. For a deployment that replaces a server in use, put that server's `JWT_SECRET` in `secrets/jwt_secret`.
   4. `ops/rebuild.sh`.
   5. `ops/reload.sh`.
   6. Configure nginx from `ops/nginx.conf.example`.
   
   Updating is steps 4 and 5 again after a `git pull`.
+- Running locally: `ops/setup.sh local --generate-secrets` with a Twitch application of your own that has `http://localhost:3000/auth/twitch/callback` registered, then `pnpm install`, `pnpm build`, `pnpm dev`.
 - Abuse limits live in nginx, not the server: per-address caps on open connections and request rate, in the example config. They matter because a viewer's websocket is anonymous and is sent the whole snapshot on connecting, so opening them in a loop is a cheap way to slow the site for every streamer. The numbers in the example are untested starting points.
 - `GET /healthz` returns 200 once sqlite is open.
-- sqlite backup is a file copy of the volume. Document it, including that the file contains OAuth tokens and must be stored accordingly.
+- sqlite backup is a copy of the file in `data/`. Document it, including that the file contains OAuth tokens and must be stored accordingly.
 - Remove `ecosystem*.config.js` and the `bundle` script in Phase 5; `scripts/pack-mod.ts` replaces `bundle`.
 
 ## Phases
@@ -504,7 +513,7 @@ Each phase ends in something runnable. Phase 0 and Phase 1 are ordered; later ph
 - [x] `ws.ts`: upgrade routing (`/<jwt>` and `/client=<name>`), token verification, viewer name resolution to id, persistence, fan-out by id, ping/pong reaping every 30s. A viewer is sent the current snapshot as soon as it connects.
 - [x] `app.ts` and `main.ts`: HTTP server with `/healthz`, websocket upgrade attached, clean shutdown on SIGTERM.
 - [x] Tests: fake mod sends each wire fixture, fake viewer receives the expected canonical snapshot, row is updated at the current schema version.
-- [ ] Dockerfile and `ops/` scripts, so Phase 1 runs the same way production will. Written, and the setup script's logic exercised against a stub. **The Dockerfile has never been built and the ops scripts have never run against real Docker**, since the development container has none. Build and run once before relying on them.
+- [ ] Dockerfile and `ops/` scripts, so Phase 1 runs the same way production will. Written, and exercised against a stub `docker` command: setup, the refusals, the confirmation, the other-clone guard, and the `docker run` line they produce. `ops/local.sh` has run for real. **The Dockerfile has never been built and the ops scripts have never run against real Docker**, since the development container has none. Build and run once before relying on them.
 - [ ] Point a dev `host.lua` at the new server and confirm the unchanged mod connects and updates.
 
 Done when: a real mod instance talks to the new server with no Lua changes.

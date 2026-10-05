@@ -1,6 +1,8 @@
-# nginx in front of Streamer Wands. An example to adapt: the names below are the defaults from
-# ops/config.sh, and the TLS certificate lines are left to however the host manages
-# certificates.
+# nginx in front of Streamer Wands. An example to adapt, written for the production deployment:
+# the host name and port are the ones in ops/deployments/production.sh, and the TLS certificate
+# lines are left to however the host manages certificates. Another deployment on the same host
+# needs its own server blocks with its own host name and port; the cache path, the limit zones
+# and the map are shared and appear once.
 #
 # Everything is passed to the server, including the websocket connections from mods and
 # viewers. Nothing is served from the host's disk, so a deployment is only ever the container.

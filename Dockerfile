@@ -2,7 +2,7 @@
 #
 # The server has no build step of its own; Node runs its TypeScript sources directly.
 #
-# Built by ops/rebuild.sh and run by ops/reload.sh, which is where the environment is defined.
+# Built by ops/rebuild.sh and run by ops/reload.sh. The environment is defined in ops/config.sh.
 
 FROM node:26-slim AS base
 WORKDIR /app
@@ -35,10 +35,9 @@ COPY server ./server
 COPY --from=build /app/releases ./releases
 COPY --from=build /app/dist/web ./dist/web
 
-# The sqlite database lives on a volume so it survives the container.
-RUN mkdir -p /data && chown node:node /data
-VOLUME /data
-
+# The database and the secrets are directories of the clone, mounted at /data and /run/secrets.
+# ops/reload.sh runs the container as the user who owns them. Run any other way, it is at least
+# not root.
 USER node
 EXPOSE 3000
 

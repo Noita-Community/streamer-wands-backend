@@ -1,39 +1,105 @@
-# What differs between one deployment and another. Sourced, not executed.
+# Shared by the scripts in this directory. Sourced, not executed.
 #
-# The rest of the server's environment is defined in reload.sh. Secret values live in files
-# under SECRETS_DIR and are never in git.
+# A clone of this repository is one deployment: production, dev or local. Which one is recorded
+# in the file .deployment at the top of the clone, written once by `ops/setup.sh <deployment>`
+# and not in git. Every other script reads it. There is no default, so a clone that has not been
+# set up cannot act on anything.
 #
-# Each value can be overridden for one invocation by setting it in the caller's environment.
-# A second deployment on the same host, such as a development site, overrides all of them:
-#
-#   PUBLIC_URL=https://dev.onlywands.com TWITCH_CLIENT_ID=... \
-#   IMAGE=onlywands-dev CONTAINER=onlywands-dev VOLUME=onlywands-dev-data HOST_PORT=3001 \
-#   SECRETS_DIR=/srv/onlywands-dev/secrets ops/reload.sh
+# What each deployment is lives in ops/deployments/<name>.sh, in git. Everything a deployment
+# writes stays inside its clone:
+#   secrets/   one file per secret, private to the operator; see ops/setup.sh
+#   data/      the sqlite database
+# Both directories are in git, empty, with their contents ignored. The scripts never create
+# them: if one is missing, something is wrong with the clone.
 
-# Origin the site is reached at, with no trailing slash. The Twitch login callback, the address
-# written into downloaded mods and the address viewers' pages connect to all come from this, so
-# a mod downloaded from a deployment talks to that deployment.
-PUBLIC_URL="${PUBLIC_URL:-https://onlywands.com}"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MARKER="$REPO/.deployment"
+SECRETS_DIR="$REPO/secrets"
+DATA_DIR="$REPO/data"
 
-# Client id of the Twitch application used for login. Its secret goes in SECRETS_DIR. The
-# application must have $PUBLIC_URL/auth/twitch/callback registered as a redirect URL.
-TWITCH_CLIENT_ID="${TWITCH_CLIENT_ID:-REPLACE_WITH_TWITCH_CLIENT_ID}"
+# The files that must be in secrets/ before the server can start.
+SECRET_FILES=(twitch_client_id twitch_client_secret jwt_secret session_secret)
 
-# Docker image built by rebuild.sh and run by reload.sh.
-IMAGE="${IMAGE:-onlywands}"
+die() {
+    echo "$*" >&2
+    exit 1
+}
 
-# Name of the running container.
-CONTAINER="${CONTAINER:-onlywands}"
+# The deployments there are, from the files in ops/deployments/.
+deployment_names() {
+    local file
+    for file in "$REPO"/ops/deployments/*.sh; do
+        basename "$file" .sh
+    done
+}
 
-# Named volume holding the sqlite database, mounted at /data in the container.
-VOLUME="${VOLUME:-onlywands-data}"
+# Load the deployment named $1: sets NAME, PUBLIC_URL, HOST_PORT and LOG_LEVEL from its file, and
+# the Docker names that follow from NAME.
+load_deployment() {
+    DEPLOYMENT="$1"
+    local file="$REPO/ops/deployments/$DEPLOYMENT.sh"
+    [ -f "$file" ] || die "no such deployment: $DEPLOYMENT (there are: $(deployment_names | xargs))"
+    LOG_LEVEL=info
+    # shellcheck source=/dev/null
+    source "$file"
+    IMAGE="$NAME"
+    CONTAINER="$NAME"
+}
 
-# Host port the server is published on, for nginx to proxy to. Bound to 127.0.0.1 only. The
-# container always listens on 3000.
-HOST_PORT="${HOST_PORT:-3000}"
+# Load the deployment this clone was set up as.
+load_this_deployment() {
+    [ -f "$MARKER" ] || die "this clone has not been set up. Run: ops/setup.sh <$(deployment_names | xargs | tr ' ' '|')>"
+    load_deployment "$(cat "$MARKER")"
+}
 
-# Host directory holding one file per secret, mounted read-only at /run/secrets:
-#   twitch_client_secret   from the Twitch developer console
-#   jwt_secret             signs the token in every downloaded mod; changing it locks them all out
-#   session_secret
-SECRETS_DIR="${SECRETS_DIR:-/srv/onlywands/secrets}"
+# Say what is about to be acted on and ask to go ahead. $1 is what the script will do.
+# Pass --yes to a script to skip the question.
+confirm() {
+    echo "deployment: $DEPLOYMENT"
+    echo "  site:       $PUBLIC_URL"
+    echo "  container:  $CONTAINER, listening on 127.0.0.1:$HOST_PORT"
+    echo "  clone:      $REPO"
+    echo "about to: $1"
+    if [ "${ASSUME_YES:-0}" -eq 1 ]; then
+        return
+    fi
+    local answer
+    read -r -p "go ahead? [y/N] " answer
+    case "$answer" in
+        y | Y | yes) ;;
+        *) die "stopped; nothing was done" ;;
+    esac
+}
+
+# Stop unless every secret file is present and not empty.
+require_secrets() {
+    [ -d "$SECRETS_DIR" ] || die "missing directory: $SECRETS_DIR (it is part of the repository)"
+    local name missing=0
+    for name in "${SECRET_FILES[@]}"; do
+        if [ ! -s "$SECRETS_DIR/$name" ]; then
+            echo "missing or empty: $SECRETS_DIR/$name" >&2
+            missing=1
+        fi
+    done
+    [ "$missing" -eq 0 ] || die "run ops/setup.sh to see what each file should hold"
+}
+
+# The server's whole environment, as SERVER_ENV, an array of NAME=value. This is the one place
+# it is defined; server/config.ts says what each setting means.
+#   $1  port the server listens on
+#   $2  path of the sqlite database, as the server sees it
+#   $3  directory holding the secret files, as the server sees it
+server_env() {
+    SERVER_ENV=(
+        "PORT=$1"
+        "PUBLIC_URL=$PUBLIC_URL"
+        "LOG_LEVEL=$LOG_LEVEL"
+        "DB_PATH=$2"
+        "RELEASES_DIR=./releases"
+        "WEB_DIR=./dist/web"
+        "TWITCH_CLIENT_ID_FILE=$3/twitch_client_id"
+        "TWITCH_CLIENT_SECRET_FILE=$3/twitch_client_secret"
+        "JWT_SECRET_FILE=$3/jwt_secret"
+        "SESSION_SECRET_FILE=$3/session_secret"
+    )
+}
