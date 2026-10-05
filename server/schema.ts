@@ -146,15 +146,6 @@ export type Snapshot = SelectableSnapshot & {
     received_at: number;
 };
 
-/** The body of GET /api/streamer/:name: what the viewer page starts from. */
-export type StreamerResponse = {
-    streamer: { login: string | null; display_name: string };
-    /** The mod version this server hands out; the page warns when the streamer's differs. */
-    current_mod_version: string;
-    /** null when the streamer has never sent anything */
-    snapshot: Snapshot | null;
-};
-
 // ---------------------------------------------------------------------------
 // Small guards
 

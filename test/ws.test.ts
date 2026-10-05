@@ -4,14 +4,11 @@
 import { afterAll, beforeAll, describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import type { AddressInfo } from 'node:net';
 import { WebSocket } from 'ws';
 
-import { createApp } from '../server/app.ts';
 import { Secret } from '../server/config.ts';
-import { openDb } from '../server/db.ts';
-import { silentLogger } from '../server/log.ts';
-import { signTicket } from '../server/ticket.ts';
+import { signToken } from '../server/token.ts';
+import { JWT_SECRET, startTestApp, type TestApp } from './harness.ts';
 
 const fixture = (name: string): unknown =>
     JSON.parse(readFileSync(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
@@ -24,7 +21,6 @@ const GENERATIONS = [
     'oldest-array',
 ];
 
-const SECRET = new Secret('test-secret');
 const STREAMER = { id: '12345678', displayName: 'DunkOrSlam' };
 
 /** A websocket client that queues what it receives, so nothing is lost between open and await. */
@@ -74,28 +70,22 @@ class Client {
     }
 }
 
-describe('app', () => {
+describe('websocket', () => {
     let clock = 1_760_000_000_000;
-    const db = openDb(':memory:');
-    const app = createApp({
-        db,
-        jwtSecret: SECRET,
-        log: silentLogger,
-        modVersion: '1.2.10',
-        now: () => clock,
-    });
+    let server: TestApp;
+    let app: TestApp['app'];
+    let db: TestApp['db'];
     let base = '';
     const clients: Client[] = [];
 
     beforeAll(async () => {
-        await new Promise<void>((resolve) => app.server.listen(0, '127.0.0.1', resolve));
-        base = `127.0.0.1:${(app.server.address() as AddressInfo).port}`;
+        server = await startTestApp({ now: () => clock });
+        ({ app, db, host: base } = server);
     });
 
     afterAll(async () => {
         await Promise.all(clients.map((c) => c.close()));
-        await app.close();
-        db.close();
+        await server.close();
     });
 
     /** Opens a socket, or rejects with the HTTP status the upgrade was refused with. */
@@ -111,7 +101,7 @@ describe('app', () => {
             ws.once('error', (err) => reject(err));
         });
 
-    const connectMod = (who = STREAMER) => connect(signTicket(who, SECRET));
+    const connectMod = (who = STREAMER) => connect(signToken(who, JWT_SECRET));
 
     it('answers the health check', async () => {
         const res = await fetch(`http://${base}/healthz`);
@@ -119,10 +109,10 @@ describe('app', () => {
         assert.deepEqual(await res.json(), { ok: true });
     });
 
-    it('refuses a mod with a bad ticket, and an empty path', async () => {
-        await assert.rejects(connect('not-a-ticket'), (status) => status === 401);
+    it('refuses a mod with a bad token, and an empty path', async () => {
+        await assert.rejects(connect('not-a-token'), (status) => status === 401);
         await assert.rejects(
-            connect(signTicket(STREAMER, new Secret('wrong'))),
+            connect(signToken(STREAMER, new Secret('wrong'))),
             (status) => status === 401,
         );
         await assert.rejects(connect(''), (status) => status === 400);
@@ -132,7 +122,7 @@ describe('app', () => {
         await assert.rejects(connect('client=nobody_at_all'), (status) => status === 404);
     });
 
-    it('creates the streamer row when a mod first connects with a valid ticket', async () => {
+    it('creates the streamer row when a mod first connects with a valid token', async () => {
         const mod = await connectMod();
         assert.equal(db.getStreamer(STREAMER.id)?.display_name, 'DunkOrSlam');
         await mod.close();
@@ -202,21 +192,6 @@ describe('app', () => {
         assert.equal(((await theirs.next()) as { received_at: number }).received_at, clock);
         assert.ok(await mine.quiet());
         await Promise.all([otherMod.close(), mine.close(), theirs.close()]);
-    });
-
-    it('serves the snapshot over HTTP by name, case-insensitively', async () => {
-        const res = await fetch(`http://${base}/api/streamer/DUNKORSLAM`);
-        assert.equal(res.status, 200);
-        assert.deepEqual(await res.json(), {
-            streamer: { login: null, display_name: 'DunkOrSlam' },
-            current_mod_version: '1.2.10',
-            snapshot: db.readSnapshot(STREAMER.id),
-        });
-    });
-
-    it('answers 404 over HTTP for an unknown streamer and unknown paths', async () => {
-        assert.equal((await fetch(`http://${base}/api/streamer/nobody_at_all`)).status, 404);
-        assert.equal((await fetch(`http://${base}/nope`)).status, 404);
     });
 
     it('forgets a viewer when its socket closes', async () => {

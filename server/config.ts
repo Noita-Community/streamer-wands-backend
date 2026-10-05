@@ -43,7 +43,8 @@ export type Config = Readonly<{
     /**
      * PUBLIC_URL, required. Origin the site is reached at, e.g. https://onlywands.com, with no
      * trailing slash. The Twitch login callback and the websocket address written into
-     * downloaded mods are derived from it.
+     * downloaded mods are derived from it, and the site's cookies are marked Secure when it is
+     * https.
      */
     publicUrl: string;
     /** TWITCH_CLIENT_ID, required. The Twitch application used for login. */
@@ -59,15 +60,14 @@ export type Config = Readonly<{
     sessionSecret: Secret;
     /** DB_PATH. The sqlite database file. Default /data/onlywands.sqlite. */
     dbPath: string;
-    /** MOD_DIR. The mod's source tree, which downloads are built from. Default ./mod. */
-    modDir: string;
-    /** WEB_DIR. Directory holding the built frontend (Vite's output). Default ./dist/web. */
-    webDir: string;
+    /** RELEASES_DIR. Directory of mod release zips, which downloads are made from. Default ./releases. */
+    releasesDir: string;
     /**
-     * TRUST_PROXY. Set to true when a reverse proxy terminates TLS in front of this server:
-     * forwarded headers are then honoured and cookies marked Secure. Default false.
+     * WEB_DIR. Directory holding the built frontend (Vite's output). Default ./dist/web. Its
+     * pages/ directory holds the HTML this server sends; its static/ directory holds everything
+     * the pages load from /static/.
      */
-    trustProxy: boolean;
+    webDir: string;
     /** LOG_LEVEL. One of debug, info, warn, error. Default info. */
     logLevel: LogLevel;
 }>;
@@ -144,15 +144,6 @@ export function loadConfig(
         }
     })();
 
-    const bool = (name: string, fallback: boolean): boolean => {
-        const v = raw(name);
-        if (v === undefined) return fallback;
-        if (v === 'true' || v === '1') return true;
-        if (v === 'false' || v === '0') return false;
-        problems.push(`${name} must be true or false, got "${v}"`);
-        return fallback;
-    };
-
     const logLevel = (() => {
         const v = raw('LOG_LEVEL') ?? 'info';
         if (!(LOG_LEVELS as readonly string[]).includes(v)) {
@@ -170,9 +161,8 @@ export function loadConfig(
         jwtSecret: new Secret(required('JWT_SECRET')),
         sessionSecret: new Secret(required('SESSION_SECRET')),
         dbPath: raw('DB_PATH') ?? '/data/onlywands.sqlite',
-        modDir: raw('MOD_DIR') ?? './mod',
+        releasesDir: raw('RELEASES_DIR') ?? './releases',
         webDir: raw('WEB_DIR') ?? './dist/web',
-        trustProxy: bool('TRUST_PROXY', false),
         logLevel,
     });
 

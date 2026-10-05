@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 
+import type { StreamerPageData } from '../../server/page-data.ts';
 import type { Snapshot } from '../../server/schema.ts';
 import { dataset } from './data.ts';
-import { useStreamerFeed } from './feed.ts';
+import { useLatestSnapshot } from './feed.ts';
 import { ItemSlotView } from './Item.tsx';
 import { Pillars } from './Pillars.tsx';
 import { PlayerPanel } from './Player.tsx';
@@ -38,13 +39,12 @@ function Notice({ lines }: { lines: string[] }) {
 const AFTER_INSTALL_NOTE =
     'Note: If you just installed the mod try refreshing the page after you load into Noita with the mod enabled';
 
-export function App({ name }: { name: string }) {
-    const feed = useStreamerFeed(name);
-    const latest = feed.status === 'ready' ? feed.snapshot : null;
+export function App({ page }: { page: StreamerPageData }) {
+    const latest = useLatestSnapshot(page.snapshot, page.feed_url);
 
-    const displayName = feed.status === 'ready' ? feed.displayName : null;
+    const displayName = page.streamer.display_name;
     useEffect(() => {
-        if (displayName) document.title = `${displayName} wands`;
+        document.title = `${displayName} wands`;
     }, [displayName]);
 
     // Set while "Auto Refresh Data" is off: the snapshot that stays on screen meanwhile.
@@ -70,19 +70,10 @@ export function App({ name }: { name: string }) {
         return () => clearTimeout(timer);
     }, [showProgress]);
 
-    if (feed.status === 'loading') return null;
-    if (feed.status === 'failed') {
-        return (
-            <Notice lines={["Could not load this streamer's data.", 'Try refreshing the page.']} />
-        );
-    }
     if (!snapshot) {
         return (
             <Notice
-                lines={[
-                    `Nothing has been received from ${feed.displayName} yet.`,
-                    AFTER_INSTALL_NOTE,
-                ]}
+                lines={[`Nothing has been received from ${displayName} yet.`, AFTER_INSTALL_NOTE]}
             />
         );
     }
@@ -92,7 +83,7 @@ export function App({ name }: { name: string }) {
     return (
         <div class="content">
             <div class="top-wrapper">
-                {snapshot.mod.version !== feed.currentModVersion && (
+                {snapshot.mod.version !== page.current_mod_version && (
                     <div class="outdated">
                         <p>
                             Streamer is running outdated version:{' '}
@@ -100,7 +91,7 @@ export function App({ name }: { name: string }) {
                         </p>
                         <p>
                             Modules will probably break, please update to version:{' '}
-                            {feed.currentModVersion}{' '}
+                            {page.current_mod_version}{' '}
                         </p>
                         <p>{AFTER_INSTALL_NOTE}</p>
                     </div>

@@ -60,7 +60,7 @@ describe('db identity', () => {
     it('ensureStreamer never overwrites names already on the row', () => {
         const db = openDb(':memory:');
         db.upsertIdentity({ id: '1', login: 'current', display_name: 'Current' });
-        const row = db.ensureStreamer('1', 'StaleNameFromTicket');
+        const row = db.ensureStreamer('1', 'StaleNameFromToken');
         assert.equal(row.display_name, 'Current');
         assert.equal(row.login, 'current');
         db.close();

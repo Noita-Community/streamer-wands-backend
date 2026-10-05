@@ -1,11 +1,12 @@
 // Entry point: read configuration, open the database, listen.
 
-import { readFileSync } from 'node:fs';
-
 import { createApp } from './app.ts';
 import { ConfigError, loadConfig, type Config } from './config.ts';
 import { openDb } from './db.ts';
 import { createLogger } from './log.ts';
+import { loadReleases } from './releases.ts';
+import { createSessions } from './session.ts';
+import { createTwitch } from './twitch.ts';
 
 let config: Config;
 try {
@@ -23,22 +24,23 @@ const log = createLogger(config.logLevel);
 // visible at startup.
 log.info({ message: 'configuration', ...config });
 
-// The mod version this build hands out is recorded next to the app version in package.json.
-const { modVersion } = JSON.parse(
-    readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
-) as { modVersion?: unknown };
-if (typeof modVersion !== 'string' || modVersion === '') {
-    // Without it every viewer would be told the streamer's mod is out of date.
-    console.error('package.json has no "modVersion"');
-    process.exit(1);
-}
-
+const releases = loadReleases({ dir: config.releasesDir, publicUrl: config.publicUrl });
 const db = openDb(config.dbPath, log);
 const app = createApp({
     db,
     jwtSecret: config.jwtSecret,
     log,
-    modVersion,
+    releases,
+    sessions: createSessions({
+        secret: config.sessionSecret,
+        secure: config.publicUrl.startsWith('https:'),
+    }),
+    twitch: createTwitch({
+        clientId: config.twitchClientId,
+        clientSecret: config.twitchClientSecret,
+        redirectUri: `${config.publicUrl}/auth/twitch/callback`,
+    }),
+    publicUrl: config.publicUrl,
     webDir: config.webDir,
 });
 
@@ -47,7 +49,7 @@ app.server.listen(config.port, () => {
         message: 'listening',
         port: config.port,
         public_url: config.publicUrl,
-        mod_version: modVersion,
+        mod_versions: releases.versions,
     });
 });
 

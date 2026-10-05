@@ -31,9 +31,8 @@ describe('loadConfig', () => {
         assert.equal(c.port, 3000);
         assert.equal(c.publicUrl, 'https://onlywands.com');
         assert.equal(c.dbPath, '/data/onlywands.sqlite');
-        assert.equal(c.modDir, './mod');
+        assert.equal(c.releasesDir, './releases');
         assert.equal(c.webDir, './dist/web');
-        assert.equal(c.trustProxy, false);
         assert.equal(c.logLevel, 'info');
         assert.equal(c.twitchClientId, 'client-id');
     });
@@ -54,12 +53,11 @@ describe('loadConfig', () => {
     });
 
     it('reports every problem at once, not just the first', () => {
-        const problems = problemsOf({ PORT: 'eighty', LOG_LEVEL: 'loud', TRUST_PROXY: 'maybe' });
+        const problems = problemsOf({ PORT: 'eighty', LOG_LEVEL: 'loud' });
         const text = problems.join('\n');
         for (const name of [
             'PORT',
             'LOG_LEVEL',
-            'TRUST_PROXY',
             'PUBLIC_URL',
             'TWITCH_CLIENT_ID',
             'TWITCH_CLIENT_SECRET',
@@ -103,9 +101,8 @@ describe('loadConfig', () => {
         );
     });
 
-    it('parses booleans and ports', () => {
-        const c = loadConfig({ ...VALID, TRUST_PROXY: 'true', PORT: '8080' }, noFiles);
-        assert.equal(c.trustProxy, true);
+    it('parses ports', () => {
+        const c = loadConfig({ ...VALID, PORT: '8080' }, noFiles);
         assert.equal(c.port, 8080);
         assert.match(problemsOf({ ...VALID, PORT: '70000' }).join('\n'), /PORT/);
     });

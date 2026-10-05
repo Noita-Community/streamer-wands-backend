@@ -1,8 +1,8 @@
-// Websocket authentication for the mod.
+// The mod token: how a mod proves which streamer it belongs to.
 //
-// At login the server signs a JWT identifying the Twitch user and bakes it into
-// the downloaded mod as token.lua. When the mod connects, that JWT is the URL path.
-// Verifying it is the whole of "who is this socket".
+// When a streamer downloads the mod, the server signs a JWT identifying their Twitch account and
+// writes it into the zip as token.lua. When the mod connects, that JWT is the websocket URL's
+// path. Verifying it is the whole of "who is this socket".
 //
 // The format cannot change without every streamer downloading the mod again, because each
 // installed copy carries its token: HS256, payload { id, displayName, iat }, no expiry.
@@ -11,21 +11,22 @@ import jwt from 'jsonwebtoken';
 
 import type { Secret } from './config.ts';
 
-export type Ticket = {
+/** What a mod token says about its holder. */
+export type TokenClaims = {
     /** Twitch user id, always a string */
     id: string;
-    /** Display name at the time the ticket was minted; may be stale. The database row is authoritative. */
+    /** Display name when the token was signed; may be stale. The database row is authoritative. */
     displayName: string;
 };
 
-export function signTicket(ticket: Ticket, secret: Secret): string {
-    return jwt.sign({ id: ticket.id, displayName: ticket.displayName }, secret.unwrap(), {
+export function signToken(claims: TokenClaims, secret: Secret): string {
+    return jwt.sign({ id: claims.id, displayName: claims.displayName }, secret.unwrap(), {
         algorithm: 'HS256',
     });
 }
 
-/** Returns the ticket, or null for anything that does not verify or does not carry the expected claims. */
-export function verifyTicket(token: string, secret: Secret): Ticket | null {
+/** The token's claims, or null for anything that does not verify or does not carry them. */
+export function verifyToken(token: string, secret: Secret): TokenClaims | null {
     let payload: unknown;
     try {
         payload = jwt.verify(token, secret.unwrap(), { algorithms: ['HS256'] });
@@ -34,7 +35,7 @@ export function verifyTicket(token: string, secret: Secret): Ticket | null {
     }
     if (typeof payload !== 'object' || payload === null) return null;
     const { id, displayName } = payload as Record<string, unknown>;
-    // Twitch ids are strings, and signTicket only writes strings. A token carrying the id as a
+    // Twitch ids are strings, and signToken only writes strings. A token carrying the id as a
     // number is still accepted, since nothing in the token format rules one out.
     const idStr =
         typeof id === 'string'

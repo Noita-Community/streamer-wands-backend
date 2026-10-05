@@ -5,56 +5,44 @@
 // Needs Playwright's Chromium: pnpm exec playwright install chromium
 
 import { readFileSync } from 'node:fs';
-import type { AddressInfo } from 'node:net';
 import { chromium, type Browser, type Page } from 'playwright';
 import { build } from 'vite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 
-import { createApp } from '../server/app.ts';
-import { Secret } from '../server/config.ts';
-import { openDb } from '../server/db.ts';
-import { silentLogger } from '../server/log.ts';
-import { signTicket } from '../server/ticket.ts';
+import { signToken } from '../server/token.ts';
+import { JWT_SECRET, VERSIONS, startTestApp, type TestApp } from './harness.ts';
 
 const wire = (name: string): string =>
     readFileSync(new URL(`./fixtures/wire-${name}.json`, import.meta.url), 'utf8');
 
-const SECRET = new Secret('test-secret');
-/** The mod version the server under test hands out; the "current" fixtures report the same. */
-const MOD_VERSION = '1.2.10';
+/** The newest mod version the server under test hands out; the "current" fixtures report the same. */
+const MOD_VERSION = VERSIONS[0]!;
 
-describe('viewer page', () => {
-    const db = openDb(':memory:');
-    const app = createApp({
-        db,
-        jwtSecret: SECRET,
-        log: silentLogger,
-        modVersion: MOD_VERSION,
-        webDir: new URL('../dist/web', import.meta.url).pathname,
-    });
+describe('pages in a browser', () => {
+    let server: TestApp;
+    let db: TestApp['db'];
     let base = '';
     let browser: Browser;
     const mods: WebSocket[] = [];
 
     beforeAll(async () => {
         await build({ logLevel: 'silent' });
-        await new Promise<void>((resolve) => app.server.listen(0, '127.0.0.1', resolve));
-        base = `127.0.0.1:${(app.server.address() as AddressInfo).port}`;
+        server = await startTestApp({ webDir: new URL('../dist/web', import.meta.url).pathname });
+        ({ db, host: base } = server);
         browser = await chromium.launch();
     }, 60_000);
 
     afterAll(async () => {
         for (const mod of mods) mod.close();
         await browser?.close();
-        await app.close();
-        db.close();
+        await server.close();
     });
 
     /** A streamer's mod, connected and ready to send. Each test uses its own streamer. */
     async function connectMod(displayName: string): Promise<{ send: (fixture: string) => void }> {
-        const ticket = signTicket({ id: `id-${displayName}`, displayName }, SECRET);
-        const socket = new WebSocket(`ws://${base}/${ticket}`);
+        const token = signToken({ id: `id-${displayName}`, displayName }, JWT_SECRET);
+        const socket = new WebSocket(`ws://${base}/${token}`);
         mods.push(socket);
         await new Promise((resolve, reject) => {
             socket.once('open', resolve);
@@ -207,6 +195,34 @@ describe('viewer page', () => {
 
         await spells.locator('input.search').fill('');
         await expect.poll(() => spells.locator('.stats').textContent()).not.toContain('found');
+        await page.close();
+    });
+
+    it('offers the front page’s download only to someone logged in', async () => {
+        const page = await browser.newPage();
+        await page.goto(`http://${base}/`);
+        await expect.poll(() => page.locator('.menu').textContent()).toContain('login');
+        expect(await page.locator('#download-form').count()).toBe(0);
+
+        // The fake Twitch names the account in the code it "sends back" (see the harness).
+        const toTwitch = await page.request.get(`http://${base}/auth/login`, { maxRedirects: 0 });
+        const state = new URL(toTwitch.headers()['location']!).searchParams.get('state');
+        await page.goto(`http://${base}/auth/twitch/callback?code=90:judy:Judy&state=${state}`);
+
+        await expect
+            .poll(() => page.locator('.releases h1').textContent())
+            .toContain('Customized mod bundle for Judy');
+        expect(await page.locator('#select-version option').allTextContents()).toEqual([
+            `${VERSIONS[0]} (latest)`,
+            VERSIONS[1],
+        ]);
+        expect(await page.locator('.menu a', { hasText: 'stream link' }).getAttribute('href')).toBe(
+            '/streamer/judy',
+        );
+
+        const download = page.waitForEvent('download');
+        await page.locator('#download-form button').click();
+        expect((await download).suggestedFilename()).toBe(`streamer_wands--${VERSIONS[0]}.zip`);
         await page.close();
     });
 

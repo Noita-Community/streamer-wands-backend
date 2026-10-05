@@ -15,6 +15,7 @@ import {
     type SelectableSnapshot,
     type Snapshot,
 } from './schema.ts';
+import type { TwitchGrant } from './twitch.ts';
 
 /** DDL migrations, applied in order. PRAGMA user_version records how many have run. */
 const DDL: string[] = [
@@ -102,6 +103,19 @@ export function openDb(path: string, log: Logger = silentLogger) {
             `INSERT INTO streamers (id, login, display_name) VALUES (?, ?, ?)
              ON CONFLICT (id) DO UPDATE SET login = excluded.login, display_name = excluded.display_name`,
         ),
+        saveGrant: sql.prepare(
+            `INSERT INTO twitch_grants
+                 (streamer_id, access_token, refresh_token, expires_at, scopes, granted_at)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT (streamer_id) DO UPDATE SET
+                 access_token = excluded.access_token,
+                 refresh_token = excluded.refresh_token,
+                 expires_at = excluded.expires_at,
+                 scopes = excluded.scopes,
+                 granted_at = excluded.granted_at,
+                 last_validated_at = NULL,
+                 revoked_at = NULL`,
+        ),
         writeSnapshot: sql.prepare(
             'UPDATE streamers SET snapshot = ?, schema_version = ?, updated_at = ? WHERE id = ?',
         ),
@@ -128,7 +142,7 @@ export function openDb(path: string, log: Logger = silentLogger) {
             );
         },
 
-        /** Make sure a row exists for a streamer known only from a websocket ticket. Never overwrites names. */
+        /** Make sure a row exists for a streamer known only from a mod token. Never overwrites names. */
         ensureStreamer(id: string, displayName: string): Streamer {
             q.insertIfAbsent.run(id, displayName);
             return asStreamer(q.byId.get(id))!;
@@ -147,6 +161,23 @@ export function openDb(path: string, log: Logger = silentLogger) {
                 sql.exec('ROLLBACK');
                 throw err;
             }
+        },
+
+        /**
+         * Keep what Twitch granted at a login, replacing any earlier grant for the streamer.
+         * The streamer's row must already exist.
+         */
+        saveGrant(streamerId: string, grant: TwitchGrant): void {
+            assertUnixMs(grant.expires_at, 'expires_at');
+            assertUnixMs(grant.granted_at, 'granted_at');
+            q.saveGrant.run(
+                streamerId,
+                grant.access_token,
+                grant.refresh_token,
+                grant.expires_at,
+                grant.scopes,
+                grant.granted_at,
+            );
         },
 
         /** Store a canonical snapshot. `now` is unix ms. Returns false if the streamer does not exist. */

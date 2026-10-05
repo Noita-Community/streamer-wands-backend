@@ -383,12 +383,12 @@ template {
 
 @font-face {
     font-family: noita;
-    src: url(/noitafont/noita2.ttf);
+    src: url(/static/noitafont/noita2.ttf);
 }
 
 @font-face {
     font-family: noitaGlyph;
-    src: url(/noitafont/noitaGlyph.ttf)
+    src: url(/static/noitafont/noitaGlyph.ttf)
 }
 
 html {
@@ -1158,7 +1158,7 @@ a:visited {
     position: relative;
     background-size: 40px;
     /* background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAmklEQVQ4jWNgoDJghDEq3S3+w9hHXn6+bSPOq0osm4GBgaF95wlGuIGV7hb/j7z8fJsSl9mI86q27zzByMTAwMDw7OUXSsxiQDaDiWKT0AATAwMDwz2G/xR5F9kMJgYGiP8pNRBmBm3CcNTLZIFRLw92L//8/YdiA2FmwAvYCG0NeAH7lJX5tvTvv6rEshkYGBhWXL0BN4uqAAB3tmuIr9eIsgAAAABJRU5ErkJggg=="); */
-    background-image: url('/img/grid_box.png');
+    background-image: url('/static/img/grid_box.png');
     background-position: 39px 39px;
     image-rendering: -moz-crisp-edges;
     image-rendering: crisp-edges;

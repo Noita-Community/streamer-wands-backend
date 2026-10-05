@@ -1,4 +1,4 @@
-# Streamer Wands. Two stages: one builds the frontend, the other runs the server.
+# Streamer Wands. Two stages: one builds the frontend and packs the mod, the other runs the server.
 #
 # The server has no build step of its own; Node runs its TypeScript sources directly.
 #
@@ -10,14 +10,21 @@ WORKDIR /app
 RUN npm install --global pnpm@12.9.1
 COPY package.json pnpm-lock.yaml ./
 
-# --- Build the frontend into dist/web -------------------------------------------------------
+# --- Build: the frontend into dist/web, the current mod into releases/ ----------------------
 FROM base AS build
 RUN pnpm install --frozen-lockfile
 COPY vite.config.ts ./
 COPY web ./web
-# The frontend imports the snapshot types from the server's schema.
+# The frontend imports types from the server, and the pack script imports from it too.
 COPY server ./server
 RUN pnpm exec vite build
+
+COPY scripts/pack-mod.ts ./scripts/
+COPY mod ./mod
+# The committed releases. Packing adds the current version from mod/, replacing a committed zip
+# of the same version, so the image always carries the mod as it is in this checkout.
+COPY releases ./releases
+RUN node scripts/pack-mod.ts
 
 # --- Runtime --------------------------------------------------------------------------------
 FROM base
@@ -25,7 +32,7 @@ ENV NODE_ENV=production
 RUN pnpm install --frozen-lockfile --prod
 
 COPY server ./server
-COPY mod ./mod
+COPY --from=build /app/releases ./releases
 COPY --from=build /app/dist/web ./dist/web
 
 # The sqlite database lives on a volume so it survives the container.

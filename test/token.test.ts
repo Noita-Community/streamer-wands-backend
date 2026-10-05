@@ -4,16 +4,16 @@ import { inspect } from 'node:util';
 import jwt from 'jsonwebtoken';
 
 import { Secret } from '../server/config.ts';
-import { signTicket, verifyTicket } from '../server/ticket.ts';
+import { signToken, verifyToken } from '../server/token.ts';
 
 // Tests that mint tokens the way other code would need the raw value; production code never does.
 const RAW = 'test-secret';
 const SECRET = new Secret(RAW);
 
-describe('ticket', () => {
+describe('mod token', () => {
     it('round-trips', () => {
-        const token = signTicket({ id: '12345678', displayName: 'DunkOrSlam' }, SECRET);
-        assert.deepEqual(verifyTicket(token, SECRET), {
+        const token = signToken({ id: '12345678', displayName: 'DunkOrSlam' }, SECRET);
+        assert.deepEqual(verifyToken(token, SECRET), {
             id: '12345678',
             displayName: 'DunkOrSlam',
         });
@@ -22,7 +22,7 @@ describe('ticket', () => {
     it('verifies a token shaped like the previous server minted them', () => {
         // routes/index.js: JWT.sign({ id, displayName }, JWT_SECRET) with jsonwebtoken defaults (HS256, iat, no exp)
         const legacy = jwt.sign({ id: '12345678', displayName: 'DunkOrSlam' }, RAW);
-        assert.deepEqual(verifyTicket(legacy, SECRET), {
+        assert.deepEqual(verifyToken(legacy, SECRET), {
             id: '12345678',
             displayName: 'DunkOrSlam',
         });
@@ -30,12 +30,12 @@ describe('ticket', () => {
 
     it('tolerates a numeric id by stringifying it', () => {
         const token = jwt.sign({ id: 12345678, displayName: 'x' }, RAW);
-        assert.deepEqual(verifyTicket(token, SECRET), { id: '12345678', displayName: 'x' });
+        assert.deepEqual(verifyToken(token, SECRET), { id: '12345678', displayName: 'x' });
     });
 
     it('rejects the wrong secret', () => {
-        const token = signTicket({ id: '1', displayName: 'x' }, SECRET);
-        assert.equal(verifyTicket(token, new Secret('other')), null);
+        const token = signToken({ id: '1', displayName: 'x' }, SECRET);
+        assert.equal(verifyToken(token, new Secret('other')), null);
     });
 
     it('rejects other algorithms, including none', () => {
@@ -45,19 +45,19 @@ describe('ticket', () => {
         const body = Buffer.from(JSON.stringify({ id: '1', displayName: 'x' })).toString(
             'base64url',
         );
-        assert.equal(verifyTicket(`${header}.${body}.`, SECRET), null);
+        assert.equal(verifyToken(`${header}.${body}.`, SECRET), null);
     });
 
     it('rejects tokens missing the expected claims', () => {
-        assert.equal(verifyTicket(jwt.sign({ displayName: 'x' }, RAW), SECRET), null);
-        assert.equal(verifyTicket(jwt.sign({ id: '', displayName: 'x' }, RAW), SECRET), null);
-        assert.equal(verifyTicket(jwt.sign({ id: '1' }, RAW), SECRET), null);
-        assert.equal(verifyTicket(jwt.sign('just a string', RAW), SECRET), null);
+        assert.equal(verifyToken(jwt.sign({ displayName: 'x' }, RAW), SECRET), null);
+        assert.equal(verifyToken(jwt.sign({ id: '', displayName: 'x' }, RAW), SECRET), null);
+        assert.equal(verifyToken(jwt.sign({ id: '1' }, RAW), SECRET), null);
+        assert.equal(verifyToken(jwt.sign('just a string', RAW), SECRET), null);
     });
 
     it('rejects garbage', () => {
-        assert.equal(verifyTicket('', SECRET), null);
-        assert.equal(verifyTicket('not.a.jwt', SECRET), null);
+        assert.equal(verifyToken('', SECRET), null);
+        assert.equal(verifyToken('not.a.jwt', SECRET), null);
     });
 });
 

@@ -1,6 +1,6 @@
 // The websocket side of the system: mods push snapshots in, viewers get them pushed out.
 //
-//   wss://host/<jwt>            a mod. The JWT (see ticket.ts) says which streamer it is.
+//   wss://host/<jwt>            a mod. The JWT (see token.ts) says which streamer it is.
 //   wss://host/client=<name>    a viewer of that streamer's page. Anonymous.
 //
 // A mod sends its whole state as one JSON text frame whenever it changes, and the literal text
@@ -10,7 +10,7 @@
 // What gets logged, and why:
 //   info   a mod session starting and ending (with what it did), since "was the mod connected,
 //          which version, did it send anything" is the first question when a page looks stale
-//   warn   things that should not happen and that someone may need to act on: rejected tickets,
+//   warn   things that should not happen and that someone may need to act on: rejected tokens,
 //          payloads we could not use, sockets that died without closing
 //   debug  per-viewer and per-snapshot events, which are high volume and only useful when tracing
 
@@ -22,7 +22,10 @@ import type { Secret } from './config.ts';
 import type { Db } from './db.ts';
 import type { Logger } from './log.ts';
 import { fromWire, type Snapshot } from './schema.ts';
-import { verifyTicket } from './ticket.ts';
+import { verifyToken } from './token.ts';
+
+/** The websocket origin of a site: https://example.com becomes wss://example.com. */
+export const websocketOrigin = (publicUrl: string): string => publicUrl.replace(/^http/, 'ws');
 
 const KEEPALIVE = 'im alive';
 const MAX_FRAME_BYTES = 512 * 1024;
@@ -207,17 +210,17 @@ export function createWsServer({
             return;
         }
 
-        const ticket = verifyTicket(arg, jwtSecret);
-        if (!ticket) {
-            // Not routine: a mod is installed with a ticket this server did not sign, or someone is
+        const claims = verifyToken(arg, jwtSecret);
+        if (!claims) {
+            // Not routine: a mod is installed with a token this server did not sign, or someone is
             // probing. Either way the streamer's page is not updating and they will ask why.
-            log.warn({ message: 'mod refused: ticket did not verify', ticket_length: arg.length });
+            log.warn({ message: 'mod refused: token did not verify', token_length: arg.length });
             return refuse(socket, 401, 'Unauthorized');
         }
-        // A valid ticket for an id with no row can only predate a database reset. Create the row
-        // from the ticket's own claims rather than refuse a legitimately issued token.
-        db.ensureStreamer(ticket.id, ticket.displayName);
-        wss.handleUpgrade(req, socket, head, (ws) => acceptMod(ws, ticket.id));
+        // A valid token for an id with no row can only predate a database reset. Create the row
+        // from the token's own claims rather than refuse a legitimately issued token.
+        db.ensureStreamer(claims.id, claims.displayName);
+        wss.handleUpgrade(req, socket, head, (ws) => acceptMod(ws, claims.id));
     }
 
     function close(): Promise<void> {
