@@ -13,27 +13,69 @@
 //
 // The tooltip is the first `.tooltip` inside the host. It is positioned against the element
 // marked `data-tip-ref`: one inside the host if there is one, otherwise the nearest one around
-// it, otherwise the host itself.
+// it, otherwise the host itself. A caller can instead supply its own reference, which may be
+// a rectangle that is not any one element's; see `beside`.
 
-import { computePosition, flip, offset, shift, type Placement } from '@floating-ui/dom';
+import {
+    computePosition,
+    flip,
+    offset,
+    shift,
+    type Placement,
+    type ReferenceElement,
+} from '@floating-ui/dom';
 
-function place(host: HTMLElement, placement: Placement, [skidding, distance]: [number, number]) {
+/** How to find what a tooltip is positioned against, given its host. */
+type Reference = (host: HTMLElement) => ReferenceElement;
+
+const markedReference: Reference = (host) =>
+    host.querySelector<HTMLElement>('[data-tip-ref]') ??
+    host.closest<HTMLElement>('[data-tip-ref]') ??
+    host;
+
+/**
+ * A reference as wide as the nearest ancestor matching `widthOf` and as tall as the nearest one
+ * matching `heightOf`. Placed left or right, the tooltip then sits outside the wider element,
+ * level with the narrower one: beside a table, aligned with the hovered row.
+ */
+export function beside(widthOf: string, heightOf: string): Reference {
+    return (host) => {
+        const wide = host.closest<HTMLElement>(widthOf) ?? host;
+        const tall = host.closest<HTMLElement>(heightOf) ?? host;
+        return {
+            contextElement: tall,
+            getBoundingClientRect: () => {
+                const { left, right, width } = wide.getBoundingClientRect();
+                const { top, bottom, height } = tall.getBoundingClientRect();
+                return { x: left, y: top, left, right, top, bottom, width, height };
+            },
+        };
+    };
+}
+
+function place(
+    host: HTMLElement,
+    placement: Placement,
+    [skidding, distance]: [number, number],
+    reference: Reference,
+) {
     const tooltip = host.querySelector<HTMLElement>('.tooltip');
     if (!tooltip) return;
-    const reference =
-        host.querySelector<HTMLElement>('[data-tip-ref]') ??
-        host.closest<HTMLElement>('[data-tip-ref]') ??
-        host;
 
-    void computePosition(reference, tooltip, {
+    void computePosition(reference(host), tooltip, {
         placement,
         strategy: 'absolute',
         middleware: [
             offset({ crossAxis: skidding, mainAxis: distance }),
-            flip(),
+            // Swap sides when the chosen one lacks room, and turn to the other axis when both do.
+            // Only room on the flipping axis counts: a tooltip that sticks out along the other
+            // axis is slid back by shift() below, not flipped.
+            flip({ crossAxis: false, fallbackAxisSideDirection: 'end' }),
             shift({ padding: 5 }),
         ],
-    }).then(({ x, y }) => {
+    }).then(({ x, y, placement: chosen }) => {
+        // Where it ended up, for anyone inspecting the page.
+        tooltip.dataset['placement'] = chosen;
         // The stylesheet gives every tooltip a default position; this overrides it inline.
         Object.assign(tooltip.style, {
             position: 'absolute',
@@ -51,8 +93,10 @@ function place(host: HTMLElement, placement: Placement, [skidding, distance]: [n
 export function tip(
     placement: Placement,
     offset: [number, number] = [0, 0],
+    reference: Reference = markedReference,
 ): { onMouseEnter: (event: MouseEvent) => void } {
     return {
-        onMouseEnter: (event) => place(event.currentTarget as HTMLElement, placement, offset),
+        onMouseEnter: (event) =>
+            place(event.currentTarget as HTMLElement, placement, offset, reference),
     };
 }

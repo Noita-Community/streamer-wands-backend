@@ -550,7 +550,7 @@ Kept as the old page has it, on purpose:
 Known differences from the old page, each deliberate:
 
 - Hovering a shift result highlights the inputs of the shifts that caused it, and nothing in the result column. The old code's cell indexing was confused, and a first port of it highlighted whole rows; user testing on 2026-10-06 settled what was meant.
-- Every material tooltip in the shift tables opens below its name. The old page chose a direction per cell (left for inputs, above or right for outputs, with a sideways nudge when reasons were listed), which read as arbitrary in testing.- The two switches the old stylesheet hid ("Show Beta Content", "Show All Progress") are not rendered.
+- Material tooltips in the shift tables open outside the panel, level with the hovered row: to the left for inputs and raw outputs, to the right for results, so they never cover anything in the table. The old page chose a direction per cell (left for inputs, above or right for outputs, with a sideways nudge when reasons were listed), which read as arbitrary in testing.- The two switches the old stylesheet hid ("Show Beta Content", "Show All Progress") are not rendered.
 - A search that is not a valid pattern, or names no stat, leaves the table as it is. The old page threw.
 
 Left for later, from a review of this code:

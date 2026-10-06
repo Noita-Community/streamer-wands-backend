@@ -8,7 +8,7 @@ import { useState } from 'preact/hooks';
 import type { Material, ShiftState } from '../../server/schema.ts';
 import { computeRows, type Row, type ShiftKind, type ShiftPairs } from './shift-rows.ts';
 import { Toggle } from './Toggle.tsx';
-import { tip } from './tooltip.ts';
+import { beside, tip } from './tooltip.ts';
 
 const TEXT = {
     fungal: {
@@ -28,20 +28,26 @@ const COOLDOWN_SECONDS = 300;
 
 type MaterialProps = {
     material: Material;
+    /** Which side of the panel the tooltip opens on */
+    side: 'left' | 'right';
     kind: ShiftKind;
     /** In result cells: the earlier shifts that made this material what it is. */
     reasons?: Row[];
 };
 
+/** The tooltip sits outside the whole panel, level with the hovered row. */
+const besideRow = beside('.shifts', '.shifts-column > div');
+
 /**
  * A material's name, with a tooltip giving its id and, in result cells, the reasons for it.
- * Every one opens below the name, so that they all behave alike; a tooltip only moves when it
- * would otherwise leave the viewport.
+ * The tooltip opens outside the panel, to the left for inputs and to the right for results,
+ * level with the row, so that it never covers anything in the table. It only moves from there
+ * when it would otherwise leave the viewport.
  */
-function MaterialName({ material, kind, reasons = [] }: MaterialProps) {
+function MaterialName({ material, side, kind, reasons = [] }: MaterialProps) {
     const explained = reasons.length > 0;
     return (
-        <div class="material tip" {...tip('bottom-start', [0, 6])}>
+        <div class="material tip" {...tip(side, [0, 8], besideRow)}>
             <span>{material.ui_name}</span>
             <div class="tooltip fit">
                 <p>{explained ? `${TEXT[kind].idLabel} ID: ${material.id}` : material.id}</p>
@@ -154,11 +160,11 @@ export function ShiftsPanel({ state, kind, listEnabled, timerEnabled }: Props) {
                     </div>
                     {rows.map((row, i) => (
                         <div class={cellClass(row, hoverCauses.includes(i))}>
-                            <MaterialName material={row.input} kind={kind} />
+                            <MaterialName material={row.input} side="left" kind={kind} />
                             {showsOriginal(i) && (
                                 <>
                                     {' → '}
-                                    <MaterialName material={row.original} kind={kind} />
+                                    <MaterialName material={row.original} side="left" kind={kind} />
                                 </>
                             )}
                         </div>
@@ -189,12 +195,18 @@ export function ShiftsPanel({ state, kind, listEnabled, timerEnabled }: Props) {
                                 onMouseEnter={() => setHovered(i)}
                                 onMouseLeave={() => setHovered(null)}
                             >
-                                <MaterialName material={row.final} kind={kind} reasons={reasons} />
+                                <MaterialName
+                                    material={row.final}
+                                    side="right"
+                                    kind={kind}
+                                    reasons={reasons}
+                                />
                                 {row.now && (
                                     <>
                                         {' + '}
                                         <MaterialName
                                             material={row.now}
+                                            side="right"
                                             kind={kind}
                                             reasons={reasons}
                                         />
