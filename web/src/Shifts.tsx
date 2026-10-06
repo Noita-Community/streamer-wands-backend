@@ -26,21 +26,22 @@ const TEXT = {
 /** A shift can happen at most once per this many seconds. */
 const COOLDOWN_SECONDS = 300;
 
-type Side = 'top' | 'right' | 'bottom' | 'left';
-
 type MaterialProps = {
     material: Material;
-    side: Side;
     kind: ShiftKind;
     /** In result cells: the earlier shifts that made this material what it is. */
     reasons?: Row[];
 };
 
-/** A material's name, with a tooltip giving its id and, in result cells, the reasons for it. */
-function MaterialName({ material, side, kind, reasons = [] }: MaterialProps) {
+/**
+ * A material's name, with a tooltip giving its id and, in result cells, the reasons for it.
+ * Every one opens below the name, so that they all behave alike; a tooltip only moves when it
+ * would otherwise leave the viewport.
+ */
+function MaterialName({ material, kind, reasons = [] }: MaterialProps) {
     const explained = reasons.length > 0;
     return (
-        <div class="material tip" {...tip(side, [explained ? 27 : 0, side === 'left' ? 44.5 : 10])}>
+        <div class="material tip" {...tip('bottom-start', [0, 6])}>
             <span>{material.ui_name}</span>
             <div class="tooltip fit">
                 <p>{explained ? `${TEXT[kind].idLabel} ID: ${material.id}` : material.id}</p>
@@ -83,15 +84,12 @@ export function ShiftsPanel({ state, kind, listEnabled, timerEnabled }: Props) {
     const causesOf = (i: number): number[] =>
         i === 0 ? [] : [rows[i]!.causeOfFinal, rows[i]!.causeOfNow].filter((c) => c !== null);
 
-    // Hovering a result shows where it came from: the rows that caused it are highlighted, and
-    // those rows and the hovered one show their raw output.
-    const hover = hovered !== null ? rows[hovered] : undefined;
-    const hoverCauses = hover
-        ? [hover.causeOfFinal, hover.causeOfNow].filter((c) => c !== null)
-        : [];
+    // Hovering a result shows where it came from: the inputs of the shifts that caused it are
+    // highlighted, and those rows and the hovered one show their raw output.
+    const hoverCauses = hovered !== null ? causesOf(hovered) : [];
     const showsOriginal = (i: number): boolean =>
         showOriginal || (hoverCauses.length > 0 && (i === hovered || hoverCauses.includes(i)));
-    const cellClass = (row: Row, highlighted: boolean): string =>
+    const cellClass = (row: Row, highlighted = false): string =>
         [row.overwritten && 'strike', highlighted && 'highlight'].filter(Boolean).join(' ');
 
     const since = state?.seconds_since_last ?? null;
@@ -156,15 +154,11 @@ export function ShiftsPanel({ state, kind, listEnabled, timerEnabled }: Props) {
                     </div>
                     {rows.map((row, i) => (
                         <div class={cellClass(row, hoverCauses.includes(i))}>
-                            <MaterialName material={row.input} side="left" kind={kind} />
+                            <MaterialName material={row.input} kind={kind} />
                             {showsOriginal(i) && (
                                 <>
                                     {' → '}
-                                    <MaterialName
-                                        material={row.original}
-                                        side={row.original.id !== row.final.id ? 'top' : 'right'}
-                                        kind={kind}
-                                    />
+                                    <MaterialName material={row.original} kind={kind} />
                                 </>
                             )}
                         </div>
@@ -189,27 +183,18 @@ export function ShiftsPanel({ state, kind, listEnabled, timerEnabled }: Props) {
                     )}
                     {rows.map((row, i) => {
                         const reasons = causesOf(i).map((cause) => rows[cause]!);
-                        // With two materials, the first one's tooltip opens above or below so
-                        // that it does not cover the second.
-                        const side = !row.now ? 'right' : row.causeOfFinal ? 'bottom' : 'top';
                         return (
                             <div
-                                class={cellClass(row, i === hover?.causeOfFinal)}
+                                class={cellClass(row)}
                                 onMouseEnter={() => setHovered(i)}
                                 onMouseLeave={() => setHovered(null)}
                             >
-                                <MaterialName
-                                    material={row.final}
-                                    side={side}
-                                    kind={kind}
-                                    reasons={reasons}
-                                />
+                                <MaterialName material={row.final} kind={kind} reasons={reasons} />
                                 {row.now && (
                                     <>
                                         {' + '}
                                         <MaterialName
                                             material={row.now}
-                                            side="right"
                                             kind={kind}
                                             reasons={reasons}
                                         />

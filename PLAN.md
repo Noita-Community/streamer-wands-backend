@@ -513,7 +513,7 @@ Each phase ends in something runnable. Phase 0 and Phase 1 are ordered; later ph
 - [x] `ws.ts`: upgrade routing (`/<jwt>` and `/client=<name>`), token verification, viewer name resolution to id, persistence, fan-out by id, ping/pong reaping every 30s. A viewer is sent the current snapshot as soon as it connects.
 - [x] `app.ts` and `main.ts`: HTTP server with `/healthz`, websocket upgrade attached, clean shutdown on SIGTERM.
 - [x] Tests: fake mod sends each wire fixture, fake viewer receives the expected canonical snapshot, row is updated at the current schema version.
-- [ ] Dockerfile and `ops/` scripts, so Phase 1 runs the same way production will. Written, and exercised against a stub `docker` command: setup, the refusals, the confirmation, the other-clone guard, and the `docker run` line they produce. `ops/local.sh` has run for real. **The Dockerfile has never been built and the ops scripts have never run against real Docker**, since the development container has none. Build and run once before relying on them.
+- [x] Dockerfile and `ops/` scripts, so Phase 1 runs the same way production will. First built and run for real on 2026-10-05, for the trial deployment; see Phase 3.
 - [ ] Point a dev `host.lua` at the new server and confirm the unchanged mod connects and updates.
 
 Done when: a real mod instance talks to the new server with no Lua changes.
@@ -549,8 +549,8 @@ Kept as the old page has it, on purpose:
 
 Known differences from the old page, each deliberate:
 
-- Hovering a shift result highlights the row that caused it. The old code indexed cells as if the table were laid out by row, though it is laid out by column, so it likely highlighted the wrong cells. Unconfirmed against the live site.
-- The two switches the old stylesheet hid ("Show Beta Content", "Show All Progress") are not rendered.
+- Hovering a shift result highlights the inputs of the shifts that caused it, and nothing in the result column. The old code's cell indexing was confused, and a first port of it highlighted whole rows; user testing on 2026-10-06 settled what was meant.
+- Every material tooltip in the shift tables opens below its name. The old page chose a direction per cell (left for inputs, above or right for outputs, with a sideways nudge when reasons were listed), which read as arbitrary in testing.- The two switches the old stylesheet hid ("Show Beta Content", "Show All Progress") are not rendered.
 - A search that is not a valid pattern, or names no stat, leaves the table as it is. The old page threw.
 
 Left for later, from a review of this code:
@@ -571,7 +571,7 @@ Done when: the page renders each fixture indistinguishably from the live site.
 - [x] Release source: committed zips in `releases/` with the version picker kept, as the escape hatch for a broken mod release. See Deployment.
 - [x] Static files under `/static/`, apart from the pages, with cache headers for nginx to cache them by.
 - [x] Tests: the login flow, page data, downloads and static files over HTTP against a faked Twitch (`test/site.test.ts`), release loading (`test/releases.test.ts`), and the front page in a browser, through to a download.
-- [ ] Build the image and run the ops scripts on a real host. **Still never done**; see Phase 1.
+- [x] Build the image and run the ops scripts on a real host. Done on 2026-10-05 as a trial deployment at test.onlywands.com on the new host, behind nginx with a Let's Encrypt certificate. Login with real Twitch and both download paths (with and without a stats file) were confirmed on a local deployment the same day.
 - [ ] A fresh login on a deployed copy produces a zip that installs and connects.
 
 Done when: a fresh login produces a zip that installs and connects.

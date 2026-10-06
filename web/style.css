@@ -665,6 +665,12 @@ a:visited {
     background-color: rgb(11, 8, 8);
 }
 
+/* A sticky cell is its own stacking layer, so a tooltip opened from one would otherwise be
+   painted under the sticky cells of a panel that comes later in the page. */
+.shifts-header-cell:hover {
+    z-index: 4;
+}
+
 .shifts-input>input {
     width: 45px;
     font-family: 'Inter', sans-serif;

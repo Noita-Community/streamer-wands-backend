@@ -108,7 +108,7 @@ describe('pages in a browser', () => {
         await page.close();
     });
 
-    it('starts on the Apotheosis data when the run has the mod, and lets the viewer change it', async () => {
+    it('starts with the Apotheosis switch on when the run has the mod, then leaves it to the viewer', async () => {
         const mod = await connectMod('Dave');
         mod.send('current-apotheosis');
         const page = await open('Dave');
@@ -116,10 +116,15 @@ describe('pages in a browser', () => {
         // Creature shifts exist only in Apotheosis; the fixture has had two.
         await expect.poll(() => toggle(page, 'Show Creature Shifts [2]').count()).toBe(1);
 
+        // The streamer moves to a run without the mod. The switch is the viewer's; it stays.
+        mod.send('current-full');
+        await expect.poll(() => toggle(page, 'Show Creature Shifts [0]').count()).toBe(1);
+        expect(await toggle(page, 'Show Apotheosis Content').isChecked()).toBe(true);
+
         await flip(page, 'Show Apotheosis Content');
         await expect.poll(() => toggle(page, 'Show Creature Shifts').count()).toBe(0);
 
-        // A later snapshot does not undo the viewer's choice.
+        // Nor does a later snapshot undo the viewer's choice.
         mod.send('current-apotheosis');
         await page.waitForTimeout(300);
         expect(await toggle(page, 'Show Apotheosis Content').isChecked()).toBe(false);

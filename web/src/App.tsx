@@ -55,8 +55,9 @@ export function App({ page }: { page: StreamerPageData }) {
     const [showPillars, setShowPillars] = useState(false);
     const [invert, setInvert] = useState(false);
 
-    // Which data set to show. Until the viewer chooses, it follows the first snapshot seen:
-    // Apotheosis if that run has the mod loaded.
+    // Which data set to show. The switch is the viewer's, like every other one. Its starting
+    // position is decided once, from the first snapshot the page sees: on if that run has the
+    // Apotheosis mod loaded. Later snapshots never move it.
     const [apothChoice, setApothChoice] = useState<boolean | null>(null);
     const firstSeen = useRef<boolean | null>(null);
     if (firstSeen.current === null && latest) firstSeen.current = usesApotheosis(latest);
