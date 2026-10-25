@@ -8,4 +8,4 @@ NAME=onlywands
 PUBLIC_URL=https://onlywands.com
 
 # Port on 127.0.0.1 that nginx proxies to. Each deployment on a host needs its own.
-HOST_PORT=3000
+HOST_PORT=2234

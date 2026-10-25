@@ -11,4 +11,4 @@ NAME=onlywands-dev
 PUBLIC_URL=https://dev.onlywands.com
 
 # Port on 127.0.0.1 that nginx proxies to. Each deployment on a host needs its own.
-HOST_PORT=3001
+HOST_PORT=2235
