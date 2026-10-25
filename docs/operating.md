@@ -22,7 +22,7 @@ On a host with Docker and nginx, for `production` or `dev`:
 3. `ops/setup.sh <production|dev> --generate-secrets`. Put the Twitch application's client id and secret in `secrets/twitch_client_id` and `secrets/twitch_client_secret`, then run `ops/setup.sh` again to check.
     - If this deployment replaces a server people already use, put that server's JWT secret in `secrets/jwt_secret` instead of the generated one. See [Replace a running server](#replace-a-running-server).
 4. `ops/update.sh <production|dev>`
-5. Configure nginx from `ops/nginx.conf.example`. A second deployment on the same host needs its own `server` blocks with its own host name and port. The cache path, limit zones and `map` are shared and appear once.
+5. Configure nginx from `ops/nginx.conf.example`, then add TLS with `sudo certbot --nginx -d <host>`. A second deployment on the same host needs its own `server` block with its own host name and port. The cache path, limit zones and `map` are shared and appear once.
 
 The connection and request limits in the nginx example are untested starting points. They are the only abuse limits there are: the server itself limits nothing.
 
