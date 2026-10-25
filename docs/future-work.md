@@ -4,7 +4,7 @@ Things worth doing that nobody has scheduled. Remove an item once it is done or 
 
 ## Operations
 
-- **Rotate the Twitch client secret, and retire the Mongo cluster**, once the old server is gone.
+- **Retire the Mongo cluster**, once the old server is gone.
 - **Rolling back across a schema change.** Migrations only go forward: the DDL steps in `server/db.ts` (counted by `PRAGMA user_version`) and the snapshot upgrades in `server/schema.ts` (`migrate()`, by each row's `schema_version`). An older build refuses to start on a database at a newer DDL version, and cannot read snapshots stored at a newer schema version. So once a build has applied a new DDL step, `ops/update.sh --rollback` fails its health check, and so does the automatic return to the previous container when an update fails after migrating. Decide this with the first schema change: down migrations, or a rollback that discards the database, which the data allows. Either needs a step in `ops/`.
 - **Serve compressed assets.** The game data file is 2.3 MB and gzips to under 1 MB. nginx can do this (`gzip on` for `/static/`); the server does not.
 
