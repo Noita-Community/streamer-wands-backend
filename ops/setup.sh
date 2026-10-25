@@ -106,5 +106,5 @@ fi
 if [ "$DEPLOYMENT" = local ]; then
     echo "setup complete; next: pnpm install, pnpm build, pnpm dev"
 else
-    echo "setup complete; next: ops/pull.sh, then ops/reload.sh"
+    echo "setup complete; next: ops/update.sh $DEPLOYMENT"
 fi

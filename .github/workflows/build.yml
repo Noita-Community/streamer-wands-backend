@@ -4,7 +4,7 @@
 #     that it answers /healthz. Pull requests publish nothing.
 #   - weekly (Sunday 06:00 UTC) and by hand (Actions > build > Run workflow): the same with fresh
 #     base images, so Node and Debian patches get in. Hosts pull it when the operator says so
-#     (ops/pull.sh).
+#     (ops/update.sh).
 # Only the Noita-Community repository publishes; forks run the checks and stop there.
 # Published tags: `stable` (what deployments run) and `<date>-<commit>` (for rollbacks). A failure
 # publishes nothing; GitHub e-mails it. Locally: act (docs/developing.md#ci).
@@ -75,7 +75,7 @@ jobs:
                     --label "org.opencontainers.image.revision=$GITHUB_SHA" \
                     --tag swb:ci .
 
-            # Started as ops/reload.sh starts it, with dummy secrets and a throwaway database. Files are
+            # Started as ops/config.sh starts it, with dummy secrets and a throwaway database. Files are
             # copied in rather than mounted, because under act the daemon cannot see this job's paths.
             - name: The image starts and answers /healthz
               run: |

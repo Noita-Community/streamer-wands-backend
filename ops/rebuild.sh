@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build this deployment's image from the checkout. Does not touch the running container;
-# run ops/reload.sh afterwards to start using the new image.
+# run ops/reload.sh <deployment> afterwards to start using the new image.
 #
-# Production and dev normally run the image CI published (ops/pull.sh). Building here is for the
+# Production and dev normally run the image CI published (ops/update.sh). Building here is for the
 # local deployment, and for running code CI has not published. Either way the image becomes
 # <name>:latest, and the one it replaces is kept as <name>:previous.
 #

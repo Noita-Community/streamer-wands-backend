@@ -2,8 +2,9 @@
 #
 # The server has no build step of its own; Node runs its TypeScript sources directly.
 #
-# Built and published by CI (.github/workflows/build.yml), fetched by ops/pull.sh (or built
-# from a checkout by ops/rebuild.sh), and run by ops/reload.sh. The environment is defined in ops/config.sh.
+# Built and published by CI (.github/workflows/build.yml) and run by ops/update.sh, or built
+# from a checkout by ops/rebuild.sh and run by ops/reload.sh. The environment is defined in
+# ops/config.sh.
 
 FROM node:26-slim AS base
 WORKDIR /app
@@ -37,7 +38,7 @@ COPY --from=build /app/releases ./releases
 COPY --from=build /app/dist/web ./dist/web
 
 # The database and the secrets are directories of the clone, mounted at /data and /run/secrets.
-# ops/reload.sh runs the container as the user who owns them. Run any other way, it is at least
+# ops/config.sh runs the container as the user who owns them. Run any other way, it is at least
 # not root.
 USER node
 EXPOSE 3000

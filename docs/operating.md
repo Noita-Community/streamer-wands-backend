@@ -21,47 +21,41 @@ On a host with Docker and nginx, for `production` or `dev`:
 2. In the Twitch developer console, register `<PUBLIC_URL>/auth/twitch/callback` as a redirect URL of this deployment's own Twitch application.
 3. `ops/setup.sh <production|dev> --generate-secrets`. Put the Twitch application's client id and secret in `secrets/twitch_client_id` and `secrets/twitch_client_secret`, then run `ops/setup.sh` again to check.
     - If this deployment replaces a server people already use, put that server's JWT secret in `secrets/jwt_secret` instead of the generated one. See [Replace a running server](#replace-a-running-server).
-4. `ops/pull.sh`
-5. `ops/reload.sh`
-6. Configure nginx from `ops/nginx.conf.example`. A second deployment on the same host needs its own `server` blocks with its own host name and port. The cache path, limit zones and `map` are shared and appear once.
+4. `ops/update.sh <production|dev>`
+5. Configure nginx from `ops/nginx.conf.example`. A second deployment on the same host needs its own `server` blocks with its own host name and port. The cache path, limit zones and `map` are shared and appear once.
 
 The connection and request limits in the nginx example are untested starting points. They are the only abuse limits there are: the server itself limits nothing.
 
 ## Update
 
-Merge to `main` and wait for CI to publish (Actions > build). Then:
+Merge to `main` and wait for CI to publish (Actions > build). Then, in the deployment's clone:
 
 ```
 git pull
-ops/pull.sh
-ops/reload.sh
+ops/update.sh <production|dev>
 ```
 
-`git pull` keeps the ops scripts and deployment files current; the code itself comes in the image. `pull.sh` fetches `stable` and tags it locally as `<name>:latest` and with its git revision, keeping the image it replaces as `<name>:previous`. `reload.sh` stops the old container with SIGTERM and starts one from `latest`. Viewers and mods reconnect on their own.
+The deployment must be named, and must be the one the clone was set up as; there is no default. `git pull` keeps the ops scripts and deployment files current; the code itself comes in the image.
 
-Update dev first, look at it, then production. Both run `stable`, so production gets exactly the image dev was checked on, as long as CI has not published again in between: `pull.sh` prints the revision it pulled.
+`update.sh` pulls `stable` and, if it is not what the container already runs, replaces the container (SIGTERM, so the server closes cleanly) and waits for its health check. If the new container is not healthy within a minute, the one that ran before is started again and the script fails. Viewers and mods reconnect on their own.
 
-CI also republishes `stable` weekly with fresh base images. Nothing deploys it automatically; pull when it suits.
+Update dev first, look at it, then production. Both run `stable`, so production gets exactly the image dev was checked on, as long as CI has not published again in between: `update.sh` prints the revision it runs.
 
-To run code CI has not published, `ops/rebuild.sh` builds the image from the checkout instead of `pull.sh`, with the same tags.
+CI also republishes `stable` weekly with fresh base images. Nothing deploys it automatically; update when it suits.
+
+`ops/update.sh <deployment> <tag>` runs a particular published build instead, by its tag from the package page on GitHub (`<date>-<commit>`). A later run without a tag goes back to `stable`.
+
+To run code CI has not published, `ops/rebuild.sh` builds the image from the checkout, and `ops/reload.sh <deployment>` starts it.
 
 ## Roll back
 
-To the image that ran before the last update:
-
 ```
-docker tag <name>:previous <name>:latest
-ops/reload.sh
+ops/update.sh <production|dev> --rollback
 ```
 
-To any build CI published, by its tag from the package page on GitHub (`<date>-<commit>`):
+This swaps back to the image that ran before the last update, checked the same way. Running it again undoes the rollback. To go further back, name a published build: `ops/update.sh <deployment> 20261025-c6ccd7e`.
 
-```
-ops/pull.sh 20261025-c6ccd7e
-ops/reload.sh
-```
-
-`<name>` is the deployment's `NAME`, e.g. `onlywands`. `docker images <name>` lists the revisions on this host. A later `ops/pull.sh` with no tag goes back to `stable`.
+The container's image is tagged `<name>:latest`, and the one before it `<name>:previous`; `<name>` is the deployment's `NAME`, e.g. `onlywands`. `docker images <name>` lists the revisions on this host.
 
 An older build will not open a database that a newer build has changed the tables of, and cannot read snapshots stored at a newer schema version. To roll back across a change like that, restore a backup taken before the update. Take one before deploying such a change.
 
@@ -89,7 +83,7 @@ The database is the one file `data/onlywands.sqlite`. It holds every streamer's 
 
 ## Rotate a secret
 
-Replace the file in `secrets/`, then `ops/reload.sh`.
+Replace the file in `secrets/`, then `ops/reload.sh <production|dev>`, which restarts the container on the image it runs.
 
 | File                   | What rotating it does                                                                                                                          |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |

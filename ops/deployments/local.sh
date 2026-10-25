@@ -1,7 +1,7 @@
 # A developer's own machine, with no nginx and no HTTPS. Sourced by ops/config.sh.
 #
-# Normally run without Docker, by ops/local.sh (`pnpm dev`). ops/rebuild.sh and ops/reload.sh
-# work too, for trying the image.
+# Normally run without Docker, by ops/local.sh (`pnpm dev`). ops/rebuild.sh, then
+# ops/reload.sh local, work too, for trying the image.
 
 # Names the Docker image and container.
 NAME=onlywands-local

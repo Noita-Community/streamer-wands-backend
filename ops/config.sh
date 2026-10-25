@@ -17,7 +17,7 @@ MARKER="$REPO/.deployment"
 SECRETS_DIR="$REPO/secrets"
 DATA_DIR="$REPO/data"
 
-# Where CI publishes the server's image (.github/workflows/build.yml). ops/pull.sh fetches it from
+# Where CI publishes the server's image (.github/workflows/build.yml). ops/update.sh fetches it from
 # here; a deployment's file may set IMAGE_TAG to run something other than `stable`.
 REGISTRY_IMAGE=ghcr.io/noita-community/streamer-wands-backend
 
@@ -39,7 +39,7 @@ deployment_names() {
 
 # Load the deployment named $1: sets NAME, PUBLIC_URL, HOST_PORT, LOG_LEVEL and IMAGE_TAG from its
 # file, and the Docker names that follow from NAME. IMAGE is the local name of the image the
-# container runs, whether pulled (ops/pull.sh) or built here (ops/rebuild.sh).
+# container runs, whether pulled (ops/update.sh) or built here (ops/rebuild.sh).
 load_deployment() {
     DEPLOYMENT="$1"
     local file="$REPO/ops/deployments/$DEPLOYMENT.sh"
@@ -56,6 +56,16 @@ load_deployment() {
 load_this_deployment() {
     [ -f "$MARKER" ] || die "this clone has not been set up. Run: ops/setup.sh <$(deployment_names | xargs | tr ' ' '|')>"
     load_deployment "$(cat "$MARKER")"
+}
+
+# Load the deployment this clone was set up as, and stop unless $1 names it. For the scripts that
+# replace a running container: the deployment must be named every time, with no default.
+#   $1  the deployment named on the command line
+#   $2  the command, for the message when it is missing
+require_named_deployment() {
+    [ -n "$1" ] || die "say which deployment: $2 <$(deployment_names | xargs | tr ' ' '|')>"
+    load_this_deployment
+    [ "$1" = "$DEPLOYMENT" ] || die "this clone is the $DEPLOYMENT deployment, not $1. Run this from the $1 clone."
 }
 
 # Say what is about to be acted on and ask to go ahead. $1 is what the script will do.
@@ -108,4 +118,77 @@ server_env() {
         "JWT_SECRET_FILE=$3/jwt_secret"
         "SESSION_SECRET_FILE=$3/session_secret"
     )
+}
+
+# The ID of the image the deployment's container was started from, or nothing when there is no
+# container. Stops if the container exists but was started from another clone: every script
+# that replaces it calls this first, so a clone never touches another clone's container.
+running_image() {
+    docker container inspect "$CONTAINER" >/dev/null 2>&1 || return 0
+    local owner
+    owner="$(docker container inspect --format '{{ index .Config.Labels "onlywands.clone" }}' "$CONTAINER")"
+    if [ "$owner" != "$REPO" ]; then
+        echo "the container $CONTAINER was not started from this clone." >&2
+        echo "  it belongs to: ${owner:-an unknown clone}" >&2
+        echo "  this clone is: $REPO" >&2
+        die "if it really should be replaced from here, remove it yourself first: docker rm -f $CONTAINER"
+    fi
+    docker container inspect --format '{{ .Image }}' "$CONTAINER"
+}
+
+# Stop and remove the deployment's container, if there is one. SIGTERM lets the server close
+# sockets and the database cleanly.
+stop_container() {
+    docker container inspect "$CONTAINER" >/dev/null 2>&1 || return 0
+    docker stop "$CONTAINER" >/dev/null
+    docker rm "$CONTAINER" >/dev/null
+    echo "stopped $CONTAINER"
+}
+
+# Start the deployment's container from the image $1 (a name or an ID).
+#
+# The container runs as the user who runs the script, so that it can read that user's files in
+# secrets/ and write the database in data/. It is labelled with the clone it was started from.
+start_container() {
+    server_env 3000 /data/onlywands.sqlite /run/secrets
+    local setting env_flags=()
+    for setting in "${SERVER_ENV[@]}"; do
+        env_flags+=(--env "$setting")
+    done
+    docker run --detach \
+        --name "$CONTAINER" \
+        --label "onlywands.clone=$REPO" \
+        --restart unless-stopped \
+        --user "$(id -u):$(id -g)" \
+        --publish "127.0.0.1:$HOST_PORT:3000" \
+        --volume "$DATA_DIR:/data" \
+        --volume "$SECRETS_DIR:/run/secrets:ro" \
+        "${env_flags[@]}" \
+        "$1" >/dev/null
+    echo "started $CONTAINER for $PUBLIC_URL, on 127.0.0.1:$HOST_PORT"
+}
+
+# Wait for the container's health check (GET /healthz) to pass. Fails if it reports unhealthy,
+# the container stops, or a minute goes by.
+wait_healthy() {
+    local status _
+    for _ in $(seq 60); do
+        status="$(docker container inspect --format '{{ .State.Health.Status }}' "$CONTAINER" 2>/dev/null || echo gone)"
+        case "$status" in
+            healthy) return 0 ;;
+            unhealthy | gone) break ;;
+        esac
+        [ "$(docker container inspect --format '{{ .State.Running }}' "$CONTAINER")" = true ] || break
+        sleep 1
+    done
+    echo "$CONTAINER did not become healthy (last status: $status). Its last log lines:" >&2
+    docker logs --tail 20 "$CONTAINER" >&2 2>&1 || true
+    return 1
+}
+
+# The short git revision an image was built from, from its label, or nothing.
+image_revision() {
+    local revision
+    revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$1" 2>/dev/null || true)"
+    echo "${revision:0:7}"
 }

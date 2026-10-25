@@ -1,31 +1,23 @@
-# nginx in front of Streamer Wands. An example to adapt, written for the production deployment:
-# the host name and port are the ones in ops/deployments/production.sh, and the TLS certificate
-# lines are left to however the host manages certificates. Another deployment on the same host
-# needs its own server blocks with its own host name and port; the cache path, the limit zones
-# and the map are shared and appear once.
+# nginx in front of Streamer Wands, for the production deployment. Host name and port come from
+# ops/deployments/production.sh. Certificate configuration is left to the host.
 #
-# Everything is passed to the server, including the websocket connections from mods and
-# viewers. Nothing is served from the host's disk, so a deployment is only ever the container.
+# Each further deployment on the same host needs its own server blocks with its own host name
+# and port. proxy_cache_path, the limit zones and the map are shared and appear once.
 #
-# Responses under /static/ are cached by nginx for as long as the server's Cache-Control header
-# on each allows: a year for built scripts and styles, whose names change with their content,
-# and an hour for fonts and images. After the first request for a file, nginx answers for it
-# without asking the server.
+# All requests, websockets included, go to the container. nginx serves nothing from disk.
 
-# Where nginx keeps its copies. Entries unused for 30 days are dropped; the total is capped.
+# Cache for /static/. Entries follow the server's Cache-Control headers.
 proxy_cache_path /var/cache/nginx/onlywands levels=1:2 keys_zone=onlywands:10m
                  max_size=200m inactive=30d;
 
-# Limits per client address. The server itself limits nothing, and a viewer's connection is
-# anonymous and is sent the streamer's whole snapshot when it opens, so without these one
-# address could open connections in a loop and slow the site for everyone.
-#   conn: how many connections one address may hold open at once, websockets included
-#   req:  how fast one address may make requests, which includes opening websockets
-# The numbers are starting points. A household of viewers shares one address.
+# Per-address limits. The server has none of its own.
+#   conn: connections open at once, websockets included
+#   req:  request rate, websocket opens included
+# Untested starting values. Several viewers can share one address.
 limit_conn_zone $binary_remote_addr zone=onlywands_conn:10m;
 limit_req_zone  $binary_remote_addr zone=onlywands_req:10m rate=10r/s;
 
-# Websocket upgrades: pass the Upgrade header through when a request has one.
+# Websocket upgrades.
 map $http_upgrade $connection_upgrade {
     default upgrade;
     ''      close;
@@ -33,21 +25,20 @@ map $http_upgrade $connection_upgrade {
 
 server {
     listen 443 ssl;
-    server_name onlywands.com;                  # the host of PUBLIC_URL
+    server_name onlywands.com;                  # host of PUBLIC_URL
 
     # ssl_certificate     ...;
     # ssl_certificate_key ...;
 
-    # The stats file a streamer may upload is around a hundred kilobytes.
+    # Matches the server's limit on the download form, which carries the stats file.
     client_max_body_size 4m;
 
     location /static/ {
         proxy_pass http://127.0.0.1:3000;       # HOST_PORT
         proxy_set_header Host $host;
         proxy_cache onlywands;
-        # When several requests want a file that is not cached yet, ask the server once.
         proxy_cache_lock on;
-        # If the server is down or restarting, keep serving what is cached.
+        # Keep serving cached files while the server is down or restarting.
         proxy_cache_use_stale error timeout updating http_502 http_503 http_504;
     }
 
@@ -60,8 +51,7 @@ server {
         proxy_set_header Host $host;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
-        # A mod sends a keepalive every few seconds, but a viewer's socket is silent for as
-        # long as the streamer is not playing.
+        # Long-lived websockets. Must exceed the server's ping interval.
         proxy_read_timeout 1h;
         proxy_send_timeout 1h;
     }
