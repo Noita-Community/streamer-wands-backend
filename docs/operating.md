@@ -7,8 +7,9 @@ How to run the site. For how it works inside, see [developing.md](developing.md)
 - A clone of this repository is one deployment: `production`, `dev` or `local`. What each one is (name, public URL, port) is a file in `ops/deployments/`.
 - `ops/setup.sh <deployment>` records which one a clone is, in an untracked `.deployment` file. After that no script takes a deployment argument. To re-point a clone, delete `.deployment` by hand.
 - Everything a deployment writes stays inside its clone:
-  - `secrets/`: one value per file: `twitch_client_id`, `twitch_client_secret`, `jwt_secret`, `session_secret`.
-  - `data/`: the sqlite database, `onlywands.sqlite`.
+    - `secrets/`: one value per file: `twitch_client_id`, `twitch_client_secret`, `jwt_secret`, `session_secret`.
+    - `data/`: the sqlite database, `onlywands.sqlite`.
+- The server's image is built and published by CI, as `ghcr.io/noita-community/streamer-wands-backend`. Hosts pull it; they build nothing. A deployment runs the tag `stable` unless its file sets `IMAGE_TAG`. The package is public, so pulling needs no login. GitHub makes a new package private: after CI first publishes, set it to public under the package's settings.
 - The server runs in a Docker container named after the deployment, with `data/` and `secrets/` mounted. Its port is published on 127.0.0.1 only; nginx on the host proxies everything to it, websockets included.
 - Every script says what it is about to act on and asks first. `--yes` skips the question.
 
@@ -19,8 +20,8 @@ On a host with Docker and nginx, for `production` or `dev`:
 1. Clone the repository into its own directory.
 2. In the Twitch developer console, register `<PUBLIC_URL>/auth/twitch/callback` as a redirect URL of this deployment's own Twitch application.
 3. `ops/setup.sh <production|dev> --generate-secrets`. Put the Twitch application's client id and secret in `secrets/twitch_client_id` and `secrets/twitch_client_secret`, then run `ops/setup.sh` again to check.
-   - If this deployment replaces a server people already use, put that server's JWT secret in `secrets/jwt_secret` instead of the generated one. See [Replace a running server](#replace-a-running-server).
-4. `ops/rebuild.sh`
+    - If this deployment replaces a server people already use, put that server's JWT secret in `secrets/jwt_secret` instead of the generated one. See [Replace a running server](#replace-a-running-server).
+4. `ops/pull.sh`
 5. `ops/reload.sh`
 6. Configure nginx from `ops/nginx.conf.example`. A second deployment on the same host needs its own `server` blocks with its own host name and port. The cache path, limit zones and `map` are shared and appear once.
 
@@ -28,22 +29,39 @@ The connection and request limits in the nginx example are untested starting poi
 
 ## Update
 
+Merge to `main` and wait for CI to publish (Actions > build). Then:
+
 ```
 git pull
-ops/rebuild.sh
+ops/pull.sh
 ops/reload.sh
 ```
 
-`rebuild.sh` tags the image `latest` and with the git revision. `reload.sh` stops the old container with SIGTERM and starts one from `latest`. Viewers and mods reconnect on their own.
+`git pull` keeps the ops scripts and deployment files current; the code itself comes in the image. `pull.sh` fetches `stable` and tags it locally as `<name>:latest` and with its git revision, keeping the image it replaces as `<name>:previous`. `reload.sh` stops the old container with SIGTERM and starts one from `latest`. Viewers and mods reconnect on their own.
+
+Update dev first, look at it, then production. Both run `stable`, so production gets exactly the image dev was checked on, as long as CI has not published again in between: `pull.sh` prints the revision it pulled.
+
+CI also republishes `stable` weekly with fresh base images. Nothing deploys it automatically; pull when it suits.
+
+To run code CI has not published, `ops/rebuild.sh` builds the image from the checkout instead of `pull.sh`, with the same tags.
 
 ## Roll back
 
+To the image that ran before the last update:
+
 ```
-docker tag <name>:<revision> <name>:latest
+docker tag <name>:previous <name>:latest
 ops/reload.sh
 ```
 
-`<name>` is the deployment's `NAME`, e.g. `onlywands`. `docker images <name>` lists the revisions built on this host.
+To any build CI published, by its tag from the package page on GitHub (`<date>-<commit>`):
+
+```
+ops/pull.sh 20261025-c6ccd7e
+ops/reload.sh
+```
+
+`<name>` is the deployment's `NAME`, e.g. `onlywands`. `docker images <name>` lists the revisions on this host. A later `ops/pull.sh` with no tag goes back to `stable`.
 
 An older build will not open a database that a newer build has changed the tables of, and cannot read snapshots stored at a newer schema version. To roll back across a change like that, restore a backup taken before the update. Take one before deploying such a change.
 
@@ -51,7 +69,7 @@ An older build will not open a database that a newer build has changed the table
 
 1. Change `mod/`, and bump `modVersion` in `package.json`.
 2. `pnpm release`, which packs `mod/` into `releases/streamer_wands--<modVersion>.zip`.
-3. Commit the zip with the change, then [update](#update).
+3. Commit the zip with the change, then [update](#update). The zip is in the image, so it reaches the site only through CI.
 
 Every zip in `releases/` is offered for download, newest first. Earlier versions stay as the escape hatch for a broken release; about three is the intent. Delete a zip and redeploy to stop offering it.
 
@@ -73,12 +91,12 @@ The database is the one file `data/onlywands.sqlite`. It holds every streamer's 
 
 Replace the file in `secrets/`, then `ops/reload.sh`.
 
-| File | What rotating it does |
-|---|---|
-| `twitch_client_secret` | Nothing users notice. Generate a new one in the Twitch developer console first. |
-| `twitch_client_id` | Switches the site to a different Twitch application, which needs the redirect URL registered. |
-| `session_secret` | Logs everyone out of the website. |
-| `jwt_secret` | **Every installed mod stops connecting**, until each streamer downloads the mod again. Do not rotate it; see [future-work.md](future-work.md). |
+| File                   | What rotating it does                                                                                                                          |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `twitch_client_secret` | Nothing users notice. Generate a new one in the Twitch developer console first.                                                                |
+| `twitch_client_id`     | Switches the site to a different Twitch application, which needs the redirect URL registered.                                                  |
+| `session_secret`       | Logs everyone out of the website.                                                                                                              |
+| `jwt_secret`           | **Every installed mod stops connecting**, until each streamer downloads the mod again. Do not rotate it; see [future-work.md](future-work.md). |
 
 ## Replace a running server
 

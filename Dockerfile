@@ -2,12 +2,13 @@
 #
 # The server has no build step of its own; Node runs its TypeScript sources directly.
 #
-# Built by ops/rebuild.sh and run by ops/reload.sh. The environment is defined in ops/config.sh.
+# Built and published by CI (.github/workflows/build.yml), fetched by ops/pull.sh (or built
+# from a checkout by ops/rebuild.sh), and run by ops/reload.sh. The environment is defined in ops/config.sh.
 
 FROM node:26-slim AS base
 WORKDIR /app
 # Keep in step with the pnpm version the lockfile was written by.
-RUN npm install --global pnpm@12.9.1
+RUN npm install --global pnpm@12.15.0
 COPY package.json pnpm-lock.yaml ./
 
 # --- Build: the frontend into dist/web, the current mod into releases/ ----------------------

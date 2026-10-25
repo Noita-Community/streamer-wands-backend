@@ -17,6 +17,10 @@ MARKER="$REPO/.deployment"
 SECRETS_DIR="$REPO/secrets"
 DATA_DIR="$REPO/data"
 
+# Where CI publishes the server's image (.github/workflows/build.yml). ops/pull.sh fetches it from
+# here; a deployment's file may set IMAGE_TAG to run something other than `stable`.
+REGISTRY_IMAGE=ghcr.io/noita-community/streamer-wands-backend
+
 # The files that must be in secrets/ before the server can start.
 SECRET_FILES=(twitch_client_id twitch_client_secret jwt_secret session_secret)
 
@@ -33,13 +37,15 @@ deployment_names() {
     done
 }
 
-# Load the deployment named $1: sets NAME, PUBLIC_URL, HOST_PORT and LOG_LEVEL from its file, and
-# the Docker names that follow from NAME.
+# Load the deployment named $1: sets NAME, PUBLIC_URL, HOST_PORT, LOG_LEVEL and IMAGE_TAG from its
+# file, and the Docker names that follow from NAME. IMAGE is the local name of the image the
+# container runs, whether pulled (ops/pull.sh) or built here (ops/rebuild.sh).
 load_deployment() {
     DEPLOYMENT="$1"
     local file="$REPO/ops/deployments/$DEPLOYMENT.sh"
     [ -f "$file" ] || die "no such deployment: $DEPLOYMENT (there are: $(deployment_names | xargs))"
     LOG_LEVEL=info
+    IMAGE_TAG=stable
     # shellcheck source=/dev/null
     source "$file"
     IMAGE="$NAME"

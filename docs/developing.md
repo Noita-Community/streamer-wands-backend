@@ -13,14 +13,15 @@ The game dumps a snapshot of the player's state to the server every few seconds,
 
 ## Where things are
 
-| Directory | |
-|---|---|
-| `server/` | The whole server. Node runs the TypeScript directly; there is no build step. Start at `main.ts` and `app.ts`. |
-| `web/` | The pages: Preact components in `src/`, HTML entry points in `pages/`, game data in `data/`. Built by Vite into `dist/web/`. |
-| `mod/` | The Lua mod, unchanged from what streamers have installed. |
-| `releases/` | One zip per mod version on offer, committed. Made by `pnpm release` (`scripts/pack-mod.ts`). |
-| `test/` | Vitest. `test/web/` tests the page's logic directly; `*.integration.test.ts` drive a real browser. |
-| `ops/` | The deployment scripts, the nginx example, and what each deployment is. |
+| Directory            |                                                                                                                              |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `server/`            | The whole server. Node runs the TypeScript directly; there is no build step. Start at `main.ts` and `app.ts`.                |
+| `web/`               | The pages: Preact components in `src/`, HTML entry points in `pages/`, game data in `data/`. Built by Vite into `dist/web/`. |
+| `mod/`               | The Lua mod, unchanged from what streamers have installed.                                                                   |
+| `releases/`          | One zip per mod version on offer, committed. Made by `pnpm release` (`scripts/pack-mod.ts`).                                 |
+| `test/`              | Vitest. `test/web/` tests the page's logic directly; `*.integration.test.ts` drive a real browser.                           |
+| `ops/`               | The deployment scripts, the nginx example, and what each deployment is.                                                      |
+| `.github/workflows/` | CI: the checks below, then the image, published to ghcr.io.                                                                  |
 
 ## Run it locally
 
@@ -41,10 +42,20 @@ To work on the mod: change `mod/`, run `pnpm release`, restart `pnpm dev`, and d
 
 - `pnpm typecheck`: the server, the pages and the page tests.
 - `pnpm test`: everything except the browser tests.
-- `pnpm test:integration`: the built pages in a real browser against a real server. Run `pnpm build` first. They need Playwright's Chromium: `pnpm exec playwright install chromium`.
+- `pnpm test:integration`: the built pages in a real browser against a real server. Run `pnpm build` first. They need Playwright's Chromium: `pnpm exec playwright install chromium`, and on a bare Linux host its system libraries. `pnpm exec playwright install-deps --dry-run chromium` lists the packages to install with `sudo apt-get install`; root does not need Node.
 - `pnpm format`: Prettier. `mod/` keeps its own line endings.
 
 Tests cover what decides behaviour. Layout and styling are not tested; check them by eye.
+
+### CI
+
+`.github/workflows/build.yml` runs on every push to `main` and every pull request, unless it changes only `docs/` or Markdown, and weekly to pick up base-image patches. It runs the checks above, builds the image, starts it once to see that it answers `/healthz`, and on `main` of the Noita-Community repository (not forks) publishes it as `ghcr.io/noita-community/streamer-wands-backend:stable` and `:<date>-<commit>`. Pull requests publish nothing.
+
+Try changes to the workflow locally with [act](https://github.com/nektos/act) before pushing them. It needs Docker, and skips publishing. Leave out `--bind`: it runs the job as root in your checkout, leaving root-owned files in `node_modules/` and `dist/`.
+
+```
+act push -j build -P ubuntu-24.04=catthehacker/ubuntu:act-24.04
+```
 
 ## The data model
 
@@ -94,9 +105,9 @@ A viewer URL is always a name, never an id. It resolves by `login` first, then b
 
 - **Secrets.** A secret is wrapped in a `Secret` as soon as it is read, and the wrapper shows nothing when logged, serialised or inspected, which matters when developing on stream. Pass the `Secret` itself. Call `unwrap()` only inside the argument to the library call that needs the value; never hold an unwrapped secret in a variable.
 - **Logging.** Every entry is an object with a `message`, written as one JSON line. Errors are expanded with their stack. Levels are chosen for answering questions after the fact:
-  - `info`: lifecycle, and mod sessions and logins.
-  - `warn`: things someone may need to act on.
-  - `error`: unhandled failures.
-  - `debug`: per-viewer and per-snapshot noise.
+    - `info`: lifecycle, and mod sessions and logins.
+    - `warn`: things someone may need to act on.
+    - `error`: unhandled failures.
+    - `debug`: per-viewer and per-snapshot noise.
 - **Dependencies.** Remove ones that do trivial work or duplicate Node built-ins. Keep a library wherever a hand-rolled version would be worse: a regex is not a parser, and nobody should write zip structures by hand. The runtime dependencies are `ws`, `jszip`, `semver`, `fast-xml-parser` and `jsonwebtoken`. Everything used only to build or test is a dev dependency, including `preact` and `@floating-ui/dom`, which are bundled into the page. If something turns out to be harder than it looked, add a library rather than fight it.
 - **Preact is used narrowly:** function components and the basic hooks, with no state library and no router.

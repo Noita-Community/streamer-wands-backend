@@ -4,7 +4,6 @@ Things worth doing that nobody has scheduled. Remove an item once it is done or 
 
 ## Operations
 
-- **CI.** Run `pnpm typecheck`, `pnpm test`, `pnpm build` and a docker build on pull requests. `pnpm test:integration` needs Playwright's Chromium.
 - **Rotate the Twitch client secret, and retire the Mongo cluster**, once the old server is gone.
 - **Serve compressed assets.** The game data file is 2.3 MB and gzips to under 1 MB. nginx can do this (`gzip on` for `/static/`); the server does not.
 
