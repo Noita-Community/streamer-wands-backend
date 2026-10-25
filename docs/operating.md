@@ -57,7 +57,7 @@ This swaps back to the image that ran before the last update, checked the same w
 
 The container's image is tagged `<name>:latest`, and the one before it `<name>:previous`; `<name>` is the deployment's `NAME`, e.g. `onlywands`. `docker images <name>` lists the revisions on this host.
 
-An older build will not open a database that a newer build has changed the tables of, and cannot read snapshots stored at a newer schema version. To roll back across a change like that, restore a backup taken before the update. Take one before deploying such a change.
+An older build will not open a database that a newer build has changed the tables of, and cannot read snapshots stored at a newer schema version. There is no way yet to roll back across such a change; see [future-work.md](future-work.md).
 
 ## Release a new mod version
 
@@ -74,12 +74,11 @@ Every zip in `releases/` is offered for download, newest first. Earlier versions
 - When a streamer's page looks stale, look for that streamer's mod session at `info`: when it connected, which mod version it reported, and when it disconnected, with how many snapshots it sent. Rejected tokens and unusable payloads are at `warn`.
 - `GET /healthz` returns 200 once the database is open. The container's Docker health check uses it.
 
-## Back up
+## Data
 
-The database is the one file `data/onlywands.sqlite`. It holds every streamer's Twitch OAuth tokens, so store backups as you would the secrets.
+The database, `data/onlywands.sqlite`, is not backed up. It holds what streamers' mods sent most recently, and Twitch grants from logins. If it is lost, each streamer's page comes back when their mod next connects, and grants when they next log in. Installed mods keep working: their tokens are checked against `secrets/jwt_secret`, not the database.
 
-- While the server is running: `sqlite3 data/onlywands.sqlite ".backup <backup-file>"`
-- With the container stopped, a plain copy of the file works too.
+The file that must not be lost is `secrets/jwt_secret`. Without it, every installed mod stops connecting until each streamer downloads the mod again.
 
 ## Rotate a secret
 
