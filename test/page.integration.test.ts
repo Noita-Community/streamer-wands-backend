@@ -1,0 +1,252 @@
+// The viewer page, in a real browser, against a real server. These cover what only exists once
+// everything is running together: the page following a streamer's mod over the websocket, and
+// the choices it makes from what arrives. They assert on what the page says, not how it looks.
+//
+// Needs Playwright's Chromium: pnpm exec playwright install chromium
+
+import { readFileSync } from 'node:fs';
+import { chromium, type Browser, type Page } from 'playwright';
+import { build } from 'vite';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { WebSocket } from 'ws';
+
+import { signToken } from '../server/token.ts';
+import { JWT_SECRET, VERSIONS, startTestApp, type TestApp } from './harness.ts';
+
+const wire = (name: string): string =>
+    readFileSync(new URL(`./fixtures/wire-${name}.json`, import.meta.url), 'utf8');
+
+/** The newest mod version the server under test hands out; the "current" fixtures report the same. */
+const MOD_VERSION = VERSIONS[0]!;
+
+describe('pages in a browser', () => {
+    let server: TestApp;
+    let db: TestApp['db'];
+    let base = '';
+    let browser: Browser;
+    const mods: WebSocket[] = [];
+
+    beforeAll(async () => {
+        await build({ logLevel: 'silent' });
+        server = await startTestApp({ webDir: new URL('../dist/web', import.meta.url).pathname });
+        ({ db, host: base } = server);
+        browser = await chromium.launch();
+    }, 60_000);
+
+    afterAll(async () => {
+        for (const mod of mods) mod.close();
+        await browser?.close();
+        await server.close();
+    });
+
+    /** A streamer's mod, connected and ready to send. Each test uses its own streamer. */
+    async function connectMod(displayName: string): Promise<{ send: (fixture: string) => void }> {
+        const token = signToken({ id: `id-${displayName}`, displayName }, JWT_SECRET);
+        const socket = new WebSocket(`ws://${base}/${token}`);
+        mods.push(socket);
+        await new Promise((resolve, reject) => {
+            socket.once('open', resolve);
+            socket.once('error', reject);
+        });
+        return { send: (fixture) => socket.send(wire(fixture)) };
+    }
+
+    async function open(name: string): Promise<Page> {
+        const page = await browser.newPage();
+        page.on('pageerror', (err) => {
+            throw err;
+        });
+        await page.goto(`http://${base}/streamer/${name}`);
+        return page;
+    }
+
+    /** The on/off switch with this label, as the checkbox behind it. */
+    const toggle = (page: Page, label: string) =>
+        page.locator('.switch-group', { hasText: label }).locator('input[type=checkbox]');
+
+    /** Click a switch. The checkbox itself is hidden behind a styled slider. */
+    const flip = (page: Page, label: string) =>
+        page.locator('.switch-group', { hasText: label }).locator('label').click();
+
+    const health = (page: Page) => page.locator('.health');
+
+    it('shows what the streamer last sent, and names them in the title', async () => {
+        const mod = await connectMod('Alice');
+        mod.send('current-full');
+        const page = await open('alice');
+        // 5.34 of 6.4 game units, at 25 hit points each.
+        await expect.poll(() => health(page).textContent()).toContain('133.5 / 160');
+        expect(await page.title()).toBe('Alice wands');
+        await page.close();
+    });
+
+    it('follows the streamer as their mod sends new snapshots', async () => {
+        const mod = await connectMod('Bob');
+        mod.send('current-minimal');
+        const page = await open('Bob');
+        await expect.poll(() => health(page).textContent()).toContain('100 / 100');
+
+        mod.send('current-full');
+        await expect.poll(() => health(page).textContent()).toContain('133.5 / 160');
+        await page.close();
+    });
+
+    it('holds what is on screen while auto refresh is off, then catches up', async () => {
+        const mod = await connectMod('Carol');
+        mod.send('current-minimal');
+        const page = await open('Carol');
+        await expect.poll(() => health(page).textContent()).toContain('100 / 100');
+
+        await flip(page, 'Auto Refresh Data');
+        mod.send('current-full');
+        // Long enough for the snapshot to have arrived and been ignored.
+        await page.waitForTimeout(400);
+        expect(await health(page).textContent()).toContain('100 / 100');
+
+        await flip(page, 'Auto Refresh Data');
+        await expect.poll(() => health(page).textContent()).toContain('133.5 / 160');
+        await page.close();
+    });
+
+    it('starts with the Apotheosis switch on when the run has the mod, then leaves it to the viewer', async () => {
+        const mod = await connectMod('Dave');
+        mod.send('current-apotheosis');
+        const page = await open('Dave');
+        await expect.poll(() => toggle(page, 'Show Apotheosis Content').isChecked()).toBe(true);
+        // Creature shifts exist only in Apotheosis; the fixture has had two.
+        await expect.poll(() => toggle(page, 'Show Creature Shifts [2]').count()).toBe(1);
+
+        // The streamer moves to a run without the mod. The switch is the viewer's; it stays.
+        mod.send('current-full');
+        await expect.poll(() => toggle(page, 'Show Creature Shifts [0]').count()).toBe(1);
+        expect(await toggle(page, 'Show Apotheosis Content').isChecked()).toBe(true);
+
+        await flip(page, 'Show Apotheosis Content');
+        await expect.poll(() => toggle(page, 'Show Creature Shifts').count()).toBe(0);
+
+        // Nor does a later snapshot undo the viewer's choice.
+        mod.send('current-apotheosis');
+        await page.waitForTimeout(300);
+        expect(await toggle(page, 'Show Apotheosis Content').isChecked()).toBe(false);
+        await page.close();
+    });
+
+    it('starts on the base game data otherwise', async () => {
+        const mod = await connectMod('Erin');
+        mod.send('current-full');
+        const page = await open('Erin');
+        await expect.poll(() => health(page).count()).toBe(1);
+        expect(await toggle(page, 'Show Apotheosis Content').isChecked()).toBe(false);
+        expect(await toggle(page, 'Show Creature Shifts').count()).toBe(0);
+        await page.close();
+    });
+
+    it('warns when the streamer’s mod is not the version the server hands out', async () => {
+        const mod = await connectMod('Frank');
+        // A mod from before versions were reported.
+        mod.send('middle-generation');
+        const page = await open('Frank');
+        await expect
+            .poll(() => page.locator('.outdated').textContent())
+            .toContain('Streamer is running outdated version: no version found');
+        expect(await page.locator('.outdated').textContent()).toContain(
+            `please update to version: ${MOD_VERSION}`,
+        );
+
+        mod.send('current-full');
+        await expect.poll(() => page.locator('.outdated').count()).toBe(0);
+        await page.close();
+    });
+
+    it('says so when a streamer has logged in but never sent anything', async () => {
+        db.ensureStreamer('id-Grace', 'Grace');
+        const page = await open('grace');
+        await expect
+            .poll(() => page.locator('.outdated').textContent())
+            .toContain('Nothing has been received from Grace yet.');
+        await page.close();
+    });
+
+    it('answers 404 for a name nobody has, and shows the name', async () => {
+        const page = await browser.newPage();
+        const response = await page.goto(`http://${base}/streamer/nobody_by_this_name`);
+        expect(response?.status()).toBe(404);
+        await expect
+            .poll(() => page.locator('h1').first().textContent())
+            .toContain('Streamer "nobody_by_this_name" Not Found');
+        await page.close();
+    });
+
+    it('counts what a search finds in a progress table', async () => {
+        const mod = await connectMod('Heidi');
+        mod.send('current-full');
+        const page = await open('Heidi');
+        await flip(page, 'Show Progress Table');
+
+        const spells = page.locator('.prog', { hasText: 'Spells -' });
+        await spells.locator('input.search').fill('bomb');
+
+        // Every spell with "bomb" in its name or id, counted from the same data the page uses.
+        const icons = JSON.parse(
+            readFileSync(new URL('../web/data/icons.json', import.meta.url), 'utf8'),
+        ) as { spells: { id: string; name: string }[] };
+        const expected = icons.spells.filter((spell) =>
+            `${spell.id} ${spell.name}`.toLowerCase().includes('bomb'),
+        ).length;
+        expect(expected).toBeGreaterThan(0);
+        await expect
+            .poll(() => spells.locator('.stats').textContent())
+            .toContain(`(${expected} found)`);
+
+        await spells.locator('input.search').fill('');
+        await expect.poll(() => spells.locator('.stats').textContent()).not.toContain('found');
+        await page.close();
+    });
+
+    it('offers the front page’s download only to someone logged in', async () => {
+        const page = await browser.newPage();
+        await page.goto(`http://${base}/`);
+        await expect.poll(() => page.locator('.menu').textContent()).toContain('login');
+        expect(await page.locator('#download-form').count()).toBe(0);
+
+        // The fake Twitch names the account in the code it "sends back" (see the harness).
+        const toTwitch = await page.request.get(`http://${base}/auth/login`, { maxRedirects: 0 });
+        const state = new URL(toTwitch.headers()['location']!).searchParams.get('state');
+        await page.goto(`http://${base}/auth/twitch/callback?code=90:judy:Judy&state=${state}`);
+
+        await expect
+            .poll(() => page.locator('.releases h1').textContent())
+            .toContain('Customized mod bundle for Judy');
+        expect(await page.locator('#select-version option').allTextContents()).toEqual([
+            `${VERSIONS[0]} (latest)`,
+            VERSIONS[1],
+        ]);
+        expect(await page.locator('.menu a', { hasText: 'stream link' }).getAttribute('href')).toBe(
+            '/streamer/judy',
+        );
+
+        const download = page.waitForEvent('download');
+        await page.locator('#download-form button').click();
+        expect((await download).suggestedFilename()).toBe(`streamer_wands--${VERSIONS[0]}.zip`);
+        await page.close();
+    });
+
+    it('counts unlocked progress out of what the table lists', async () => {
+        const mod = await connectMod('Ivan');
+        // The fixture has unlocked two perks, two spells and two enemies.
+        mod.send('current-full');
+        const page = await open('Ivan');
+        await flip(page, 'Show Progress Table');
+        for (const table of ['Perks', 'Spells', 'Enemies']) {
+            await expect
+                .poll(() =>
+                    page
+                        .locator('.prog', { hasText: `${table} -` })
+                        .locator('.stats')
+                        .textContent(),
+                )
+                .toMatch(/2\/\d+/);
+        }
+        await page.close();
+    });
+});

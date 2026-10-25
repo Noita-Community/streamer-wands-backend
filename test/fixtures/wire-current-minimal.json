@@ -1,0 +1,34 @@
+{
+    "wands": [
+        [
+            {
+                "sprite": "data/items_gfx/wands/wand_0001.png",
+                "ui_name": "wand",
+                "shuffle_deck_when_empty": false,
+                "mana_max": 107,
+                "mana_charge_speed": 36,
+                "reload_time": 25,
+                "actions_per_round": 1,
+                "deck_capacity": 2,
+                "spread_degrees": 0,
+                "speed_multiplier": 1,
+                "fire_rate_wait": 15
+            },
+            [],
+            ["LIGHT_BULLET_#-1", "0"]
+        ]
+    ],
+    "inventory": ["0", "0", "0", "0"],
+    "items": ["0", "0", "0", "0"],
+    "progress": [[], [], [], []],
+    "runInfo": { "mods": ["streamer_wands"], "beta": false, "start": "", "playtime": 0 },
+    "playerInfo": {
+        "health": ["4", "4"],
+        "gold": 0,
+        "orbs": 0,
+        "perks": [[], []],
+        "shiftsTotal": 0
+    },
+    "modFeatures": {},
+    "modVersion": "1.2.10"
+}

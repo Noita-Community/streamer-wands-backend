@@ -1,0 +1,49 @@
+# Streamer Wands. Two stages: one builds the frontend and packs the mod, the other runs the server.
+#
+# The server has no build step of its own; Node runs its TypeScript sources directly.
+#
+# Built and published by CI (.github/workflows/build.yml) and run by ops/update.sh, or built
+# from a checkout by ops/rebuild.sh and run by ops/reload.sh. The environment is defined in
+# ops/config.sh.
+
+FROM node:26-slim AS base
+WORKDIR /app
+# Keep in step with the pnpm version the lockfile was written by.
+RUN npm install --global pnpm@12.15.0
+COPY package.json pnpm-lock.yaml ./
+
+# --- Build: the frontend into dist/web, the current mod into releases/ ----------------------
+FROM base AS build
+RUN pnpm install --frozen-lockfile
+COPY vite.config.ts ./
+COPY web ./web
+# The frontend imports types from the server, and the pack script imports from it too.
+COPY server ./server
+RUN pnpm exec vite build
+
+COPY scripts/pack-mod.ts ./scripts/
+COPY mod ./mod
+# The committed releases. Packing adds the current version from mod/, replacing a committed zip
+# of the same version, so the image always carries the mod as it is in this checkout.
+COPY releases ./releases
+RUN node scripts/pack-mod.ts
+
+# --- Runtime --------------------------------------------------------------------------------
+FROM base
+ENV NODE_ENV=production
+RUN pnpm install --frozen-lockfile --prod
+
+COPY server ./server
+COPY --from=build /app/releases ./releases
+COPY --from=build /app/dist/web ./dist/web
+
+# The database and the secrets are directories of the clone, mounted at /data and /run/secrets.
+# ops/config.sh runs the container as the user who owns them. Run any other way, it is at least
+# not root.
+USER node
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s \
+    CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/healthz').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+
+CMD ["node", "server/main.ts"]

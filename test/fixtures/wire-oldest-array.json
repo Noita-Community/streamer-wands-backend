@@ -1,0 +1,19 @@
+[
+    [
+        {
+            "sprite": "data/items_gfx/wands/wand_0001.png",
+            "ui_name": "wand",
+            "shuffle_deck_when_empty": false,
+            "mana_max": 107,
+            "mana_charge_speed": 36,
+            "reload_time": 25,
+            "actions_per_round": 1,
+            "deck_capacity": 2,
+            "spread_degrees": 0,
+            "speed_multiplier": 1,
+            "fire_rate_wait": 15
+        },
+        [],
+        ["LIGHT_BULLET_#-1", "0"]
+    ]
+]

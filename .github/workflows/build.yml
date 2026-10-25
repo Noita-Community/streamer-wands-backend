@@ -1,0 +1,118 @@
+# Checks the code, builds the production image, and publishes it to ghcr.io.
+#   - every push to main and every pull request, unless it changes only docs/ or Markdown files:
+#     typecheck, unit tests, frontend build, integration tests, then the image, started once to see
+#     that it answers /healthz. Pull requests publish nothing.
+#   - weekly (Sunday 06:00 UTC) and by hand (Actions > build > Run workflow): the same with fresh
+#     base images, so Node and Debian patches get in. Hosts pull it when the operator says so
+#     (ops/update.sh).
+# Only the Noita-Community repository publishes; forks run the checks and stop there.
+# Published tags: `stable` (what deployments run) and `<date>-<commit>` (for rollbacks). A failure
+# publishes nothing; GitHub e-mails it. Locally: act (docs/developing.md#ci).
+name: build
+
+on:
+    push:
+        branches: [main]
+        paths-ignore: ['docs/**', '**/*.md']
+    pull_request:
+        branches: [main]
+        paths-ignore: ['docs/**', '**/*.md']
+    schedule:
+        - cron: '0 6 * * 0'
+    workflow_dispatch:
+
+concurrency:
+    group: build-${{ github.ref }}
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+    packages: write
+
+env:
+    IMAGE: ghcr.io/noita-community/streamer-wands-backend
+
+jobs:
+    build:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 30
+        steps:
+            - uses: actions/checkout@v5
+
+            - uses: actions/setup-node@v5
+              with:
+                  node-version: 26
+
+            # The Dockerfile holds the one pnpm pin, so the image and CI install with the same version.
+            - name: pnpm, at the Dockerfile's version
+              run: |
+                  version="$(sed -n 's/.*pnpm@\([0-9.]*\).*/\1/p' Dockerfile)"
+                  [ -n "$version" ] || { echo "no pnpm pin found in the Dockerfile" >&2; exit 1; }
+                  npm install --global "pnpm@$version"
+                  pnpm --version
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Typecheck
+              run: pnpm typecheck
+
+            - name: Unit tests
+              run: pnpm test
+
+            - name: Build the frontend
+              run: pnpm build
+
+            - name: Integration tests
+              run: |
+                  pnpm exec playwright install --with-deps chromium
+                  pnpm test:integration
+
+            - name: Build the production image (fresh base image)
+              run: |
+                  docker build --pull \
+                    --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+                    --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+                    --tag swb:ci .
+
+            # Started as ops/config.sh starts it, with dummy secrets and a throwaway database. Files are
+            # copied in rather than mounted, because under act the daemon cannot see this job's paths.
+            - name: The image starts and answers /healthz
+              run: |
+                  source ops/config.sh
+                  PUBLIC_URL=http://localhost:3000
+                  LOG_LEVEL=info
+                  server_env 3000 /tmp/onlywands.sqlite /tmp/secrets
+                  env_flags=()
+                  for setting in "${SERVER_ENV[@]}"; do env_flags+=(--env "$setting"); done
+
+                  secrets="$(mktemp -d)"
+                  for name in "${SECRET_FILES[@]}"; do echo "ci-$name" >"$secrets/$name"; done
+                  chmod 755 "$secrets" && chmod 644 "$secrets"/*
+
+                  docker create --name swb-ci "${env_flags[@]}" swb:ci >/dev/null
+                  docker cp "$secrets" swb-ci:/tmp/secrets
+                  docker start swb-ci >/dev/null
+                  for _ in $(seq 45); do
+                    status="$(docker inspect --format '{{.State.Health.Status}}' swb-ci)"
+                    [ "$status" = healthy ] && break
+                    [ "$(docker inspect --format '{{.State.Running}}' swb-ci)" = true ] || break
+                    sleep 2
+                  done
+                  docker logs swb-ci
+                  [ "$status" = healthy ] || { echo "the image did not become healthy (status: $status)" >&2; exit 1; }
+
+            - name: Stop the image
+              if: always()
+              run: docker rm -f swb-ci >/dev/null 2>&1 || true
+
+            - name: Publish
+              if: github.repository == 'Noita-Community/streamer-wands-backend' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !env.ACT
+              run: |
+                  echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+                  tag="$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+                  docker tag swb:ci "$IMAGE:$tag"
+                  docker tag swb:ci "$IMAGE:stable"
+                  docker push "$IMAGE:$tag"
+                  docker push "$IMAGE:stable"
+                  echo "published $IMAGE:stable = $IMAGE:$tag"

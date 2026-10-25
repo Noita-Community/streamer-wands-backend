@@ -1,0 +1,9 @@
+*
+!package.json
+!pnpm-lock.yaml
+!vite.config.ts
+!server
+!scripts/pack-mod.ts
+!mod
+!releases
+!web

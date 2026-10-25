@@ -1,0 +1,64 @@
+# nginx in front of Streamer Wands, for the production deployment. Host name and port come from
+# ops/deployments/production.sh. Certificate configuration is left to the host.
+#
+# Each further deployment on the same host needs its own server blocks with its own host name
+# and port. proxy_cache_path, the limit zones and the map are shared and appear once.
+#
+# All requests, websockets included, go to the container. nginx serves nothing from disk.
+
+# Cache for /static/. Entries follow the server's Cache-Control headers.
+proxy_cache_path /var/cache/nginx/onlywands levels=1:2 keys_zone=onlywands:10m
+                 max_size=200m inactive=30d;
+
+# Per-address limits. The server has none of its own.
+#   conn: connections open at once, websockets included
+#   req:  request rate, websocket opens included
+# Untested starting values. Several viewers can share one address.
+limit_conn_zone $binary_remote_addr zone=onlywands_conn:10m;
+limit_req_zone  $binary_remote_addr zone=onlywands_req:10m rate=10r/s;
+
+# Websocket upgrades.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl;
+    server_name onlywands.com;                  # host of PUBLIC_URL
+
+    # ssl_certificate     ...;
+    # ssl_certificate_key ...;
+
+    # Matches the server's limit on the download form, which carries the stats file.
+    client_max_body_size 4m;
+
+    location /static/ {
+        proxy_pass http://127.0.0.1:3000;       # HOST_PORT
+        proxy_set_header Host $host;
+        proxy_cache onlywands;
+        proxy_cache_lock on;
+        # Keep serving cached files while the server is down or restarting.
+        proxy_cache_use_stale error timeout updating http_502 http_503 http_504;
+    }
+
+    location / {
+        limit_conn onlywands_conn 20;
+        limit_req zone=onlywands_req burst=40 nodelay;
+
+        proxy_pass http://127.0.0.1:3000;       # HOST_PORT
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        # Long-lived websockets. Must exceed the server's ping interval.
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+}
+
+server {
+    listen 80;
+    server_name onlywands.com;
+    return 301 https://$host$request_uri;
+}

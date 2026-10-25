@@ -1,35 +1,43 @@
 {
-    "name": "streamer_wands",
+    "name": "streamer-wands",
     "version": "1.2.13",
     "modVersion": "1.2.10",
-    "description": "",
-    "main": "index.js",
-    "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1"
+    "private": true,
+    "type": "module",
+    "license": "MIT",
+    "engines": {
+        "node": ">=26"
     },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
+    "scripts": {
+        "start": "node server/main.ts",
+        "dev": "ops/local.sh",
+        "build": "vite build",
+        "build:watch": "vite build --watch",
+        "release": "node scripts/pack-mod.ts",
+        "test": "vitest run --exclude '**/*.integration.test.ts'",
+        "test:watch": "vitest --exclude '**/*.integration.test.ts'",
+        "test:integration": "vitest run .integration.test.ts",
+        "typecheck": "tsc --noEmit && tsc --noEmit -p web && tsc --noEmit -p test/web",
+        "format": "prettier --write ."
+    },
     "dependencies": {
-        "body-parser": "^1.20.2",
-        "connect-mongo": "^5.1.0",
-        "domutils": "^3.2.2",
-        "dotenv": "^16.0.3",
-        "express": "^4.17.1",
-        "express-session": "^1.17.3",
-        "htmlparser2": "^10.0.0",
-        "jsonwebtoken": "^9.0.0",
-        "jszip": "^3.10.1",
-        "mongoose": "^7.2.1",
-        "multer": "^1.4.5-lts.1",
-        "passport": "^0.6.0",
-        "passport-twitch-strategy": "^2.2.0",
-        "pug": "^3.0.2",
-        "uuid": "^9.0.0",
-        "ws": "^8.13.0"
+        "fast-xml-parser": "^5.2.5",
+        "jsonwebtoken": "^9.0.2",
+        "jszip": "^3.10.2",
+        "semver": "^7.8.5",
+        "ws": "^8.18.3"
     },
     "devDependencies": {
-        "nodemon": "^3.0.1",
-        "prettier": "^3.0.3"
+        "@floating-ui/dom": "^1.8.0",
+        "@types/jsonwebtoken": "^9.0.10",
+        "@types/node": "^26.0.0",
+        "@types/semver": "^7.8.0",
+        "@types/ws": "^8.18.1",
+        "playwright": "^1.63.0",
+        "preact": "^11.0.0",
+        "prettier": "^3.6.2",
+        "typescript": "^5.9.3",
+        "vite": "^8.3.2",
+        "vitest": "^5.0.3"
     }
 }
