@@ -12,30 +12,13 @@ See the [Noita Wiki](https://noita.wiki.gg/wiki/How_to_install_mods#Manual) for 
 
 No future feature development is planned by the maintainer, but pull requests are welcomed. Read on for development information.
 
-# Developing the website
+# Development
 
-You'll need Node.js, a MongoDB server, and a Twitch app (for login) to run the app locally.
+This repository holds the website, its server, and the mod itself (in [mod](mod)).
 
-- Copy [env.template](env.template) to `.env` in the project root: `cp env.template .env`
-- Fill out the environment variables
-    - `DOMAIN` should be the domain you'll access the site at, so `localhost` is suitable for local development
-    - `NODE_ENV` should be `production` or `development`
-    - `DATABASE` is a MongoDB connection string, such as `mongodb+srv://user:password@host/?retryWrites=true&w=majority`
-    - `PORT` is the port the application listens on for browser requests and websocket requests from the mod
-    - `CLIENT_ID` and `CLIENT_SECRET` are parameters from the Twitch app (Create one at https://dev.twitch.tv/console/apps/)
-    - `CALLBACK_URL` should be `http(s)://DOMAIN/auth/twitch/callback`, and must be registered in the Twitch app
-    - `SESSION_SECRET` and `SESSION_KEY` should be randomly generated, equivalent to a password
-    - `JWT_SECRET` should be randomly generated, equivalent to a password
-- Run `index.js` (optional: run under something like `nodemon` to restart when contents change)
-- When changing the mod itself, run `DEV=true ./bundle` in the project root to create a development release for download from the web ui
-
-# Developing the mod
-
-The mod files themselves are kept in this repository in the [mod](mod) folder. Start with a customized zip (your user token is stored in [mod/token.lua](mod/token.lua))
-and make any appropriate changes, then copy/commit the files back to Git. Do not include `token.lua` in your commits.
-
-Should you need to test changes to the websocket code, you'll need to set up the full website as above, and also (temporarily) change the host in [mod/files/ws/host.lua](mod/files/ws/host.lua)
-to point to your development server. Do not include this change in your commits.
+- [docs/developing.md](docs/developing.md): how it fits together, and how to run it locally, including working on the mod
+- [docs/operating.md](docs/operating.md): setting up a host, deploying, updating, backups
+- [docs/future-work.md](docs/future-work.md): known gaps and ideas nobody has scheduled
 
 # Contributors
 
