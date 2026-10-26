@@ -128,6 +128,11 @@ describe('websocket', () => {
         await mod.close();
     });
 
+    it('accepts a mod path with extra leading slashes', async () => {
+        const mod = await connect('/' + signToken(STREAMER, JWT_SECRET));
+        await mod.close();
+    });
+
     it('sends a new viewer nothing while there is no snapshot yet', async () => {
         const viewer = await connect('client=dunkorslam');
         assert.ok(await viewer.quiet());

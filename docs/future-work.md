@@ -15,6 +15,7 @@ Login and the mod token were kept compatible with the old server on purpose. Kno
 - The mod token never expires and cannot be revoked. One shown on stream is compromised for good.
 - A session cookie cannot be revoked before its 30 days are up, and a session can download a fresh mod token, so a session is worth as much as a token.
 - Logout is a GET, so a link can log someone out.
+- The mod token is the websocket's URL path, so it ends up wherever URLs are logged. nginx's access log can be redacted, but its error log cannot. The token belongs in a header or the first message.
 - The token carries the display name from when it was signed. A streamer who renamed since is found by their old name until they log in again. The name should come from the database row.
 - The JWT could be replaced by something simpler, now that the server owns both ends.
 
