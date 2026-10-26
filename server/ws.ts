@@ -190,9 +190,16 @@ export function createWsServer({
     function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
         socket.on('error', () => {});
 
+        // req.url is the path as sent, so it is parsed with an origin in front. Resolved against a
+        // base instead, //<jwt> would read as a host name. Extra leading slashes are allowed, since
+        // a mod that joins its URL carelessly sends //<jwt>.
+        const target = req.url ?? '';
+        if (!target.startsWith('/')) return refuse(socket, 400, 'Bad Request');
         let arg: string;
         try {
-            arg = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname.slice(1));
+            arg = decodeURIComponent(
+                new URL('http://localhost' + target).pathname.replace(/^\/+/, ''),
+            );
         } catch {
             return refuse(socket, 400, 'Bad Request');
         }
